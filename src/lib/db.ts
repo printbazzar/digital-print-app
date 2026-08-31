@@ -36,7 +36,6 @@ export const db = {
           where: { email: email.toLowerCase() },
         });
 
-        // Auto-seed default accounts if database is fresh
         if (!user && (email.toLowerCase() === 'owner@printbazzar.com' || email.toLowerCase() === 'operator@printbazzar.com')) {
           const isOwner = email.toLowerCase() === 'owner@printbazzar.com';
           const pass = await bcrypt.hash(isOwner ? 'owner123' : 'operator123', 10);
@@ -234,12 +233,16 @@ export const db = {
   media: {
     list: async () => {
       try {
-        let list = await prisma.media.findMany({ where: { isActive: true } });
+        let list = await prisma.media.findMany({
+          orderBy: [{ name: 'asc' }, { gsm: 'asc' }],
+        });
         if (list.length === 0) {
           for (const m of INITIAL_MEDIA) {
             await prisma.media.create({ data: m });
           }
-          list = await prisma.media.findMany({ where: { isActive: true } });
+          list = await prisma.media.findMany({
+            orderBy: [{ name: 'asc' }, { gsm: 'asc' }],
+          });
         }
         return list.map((m) => ({
           ...m,
@@ -269,7 +272,18 @@ export const db = {
       }
     },
     create: async (item: any) => {
-      const created = await prisma.media.create({ data: item });
+      const created = await prisma.media.create({
+        data: {
+          name: item.name.trim(),
+          gsm: Number(item.gsm),
+          size: item.size.trim(),
+          brand: item.brand?.trim() || 'Generic',
+          currentStock: Math.max(0, Number(item.currentStock) || 0),
+          minimumStockLevel: Math.max(0, Number(item.minimumStockLevel) || 100),
+          unit: item.unit || 'sheets',
+          isActive: item.isActive !== undefined ? item.isActive : true,
+        },
+      });
       return {
         ...created,
         brand: created.brand || 'Generic',
@@ -279,9 +293,18 @@ export const db = {
     },
     update: async (id: string, updates: any) => {
       try {
+        const dataToUpdate: any = {};
+        if (updates.name !== undefined) dataToUpdate.name = updates.name.trim();
+        if (updates.gsm !== undefined) dataToUpdate.gsm = Number(updates.gsm);
+        if (updates.size !== undefined) dataToUpdate.size = updates.size.trim();
+        if (updates.brand !== undefined) dataToUpdate.brand = updates.brand.trim() || 'Generic';
+        if (updates.minimumStockLevel !== undefined) dataToUpdate.minimumStockLevel = Math.max(0, Number(updates.minimumStockLevel));
+        if (updates.currentStock !== undefined) dataToUpdate.currentStock = Math.max(0, Number(updates.currentStock));
+        if (updates.isActive !== undefined) dataToUpdate.isActive = Boolean(updates.isActive);
+
         const updated = await prisma.media.update({
           where: { id },
-          data: updates,
+          data: dataToUpdate,
         });
         return {
           ...updated,
@@ -289,7 +312,8 @@ export const db = {
           createdAt: updated.createdAt.toISOString(),
           updatedAt: updated.updatedAt.toISOString(),
         };
-      } catch {
+      } catch (err) {
+        console.error('Media update error:', err);
         return null;
       }
     },
@@ -301,7 +325,13 @@ export const db = {
       const media = await prisma.media.findUnique({ where: { id: mediaId } });
       if (!media) throw new Error('Media not found');
 
-      const user = await prisma.user.findUnique({ where: { id: userId } });
+      let validUserId = userId;
+      const userExists = await prisma.user.findUnique({ where: { id: userId } });
+      if (!userExists) {
+        const firstUser = await prisma.user.findFirst();
+        if (firstUser) validUserId = firstUser.id;
+      }
+
       const qty = Math.max(1, Math.floor(quantity));
       const openingStock = media.currentStock;
       const closingStock = openingStock + qty;
@@ -319,7 +349,21 @@ export const db = {
             closingStock,
             movementType: 'STOCK_IN',
             reason: reason || 'Restock purchase',
-            userId,
+            userId: validUserId,
+          },
+        }),
+        prisma.auditLog.create({
+          data: {
+            userId: validUserId,
+            action: 'STOCK_RESTOCKED',
+            entity: 'Media',
+            entityId: mediaId,
+            newValue: {
+              media: `${media.gsm} GSM ${media.name}`,
+              quantityAdded: qty,
+              newStock: closingStock,
+              reason: reason || 'Restock purchase',
+            },
           },
         }),
       ]);
@@ -334,7 +378,7 @@ export const db = {
         movement: {
           ...movement,
           mediaName: `${media.gsm} GSM ${media.name} (${media.size})`,
-          userName: user?.name || 'Operator',
+          userName: userExists?.name || 'Operator',
           createdAt: movement.createdAt.toISOString(),
         },
       };
@@ -344,7 +388,13 @@ export const db = {
       const media = await prisma.media.findUnique({ where: { id: mediaId } });
       if (!media) throw new Error('Media not found');
 
-      const user = await prisma.user.findUnique({ where: { id: userId } });
+      let validUserId = userId;
+      const userExists = await prisma.user.findUnique({ where: { id: userId } });
+      if (!userExists) {
+        const firstUser = await prisma.user.findFirst();
+        if (firstUser) validUserId = firstUser.id;
+      }
+
       const target = Math.max(0, Math.floor(newStock));
       const openingStock = media.currentStock;
       const quantityDiff = target - openingStock;
@@ -362,7 +412,22 @@ export const db = {
             closingStock: target,
             movementType: 'STOCK_ADJUSTMENT',
             reason: reason || 'Manual Stock Adjustment',
-            userId,
+            userId: validUserId,
+          },
+        }),
+        prisma.auditLog.create({
+          data: {
+            userId: validUserId,
+            action: 'STOCK_ADJUSTED',
+            entity: 'Media',
+            entityId: mediaId,
+            newValue: {
+              media: `${media.gsm} GSM ${media.name}`,
+              previousStock: openingStock,
+              adjustedStock: target,
+              delta: quantityDiff,
+              reason: reason || 'Manual Stock Adjustment',
+            },
           },
         }),
       ]);
@@ -377,7 +442,7 @@ export const db = {
         movement: {
           ...movement,
           mediaName: `${media.gsm} GSM ${media.name} (${media.size})`,
-          userName: user?.name || 'Owner',
+          userName: userExists?.name || 'Owner',
           createdAt: movement.createdAt.toISOString(),
         },
       };
@@ -444,7 +509,12 @@ export const db = {
       const machine = await prisma.machine.findUnique({ where: { id: params.machineId } });
       if (!machine) throw new Error('Machine not found');
 
-      const user = await prisma.user.findUnique({ where: { id: params.operatorId } });
+      let validOperatorId = params.operatorId;
+      const userExists = await prisma.user.findUnique({ where: { id: params.operatorId } });
+      if (!userExists) {
+        const firstUser = await prisma.user.findFirst();
+        if (firstUser) validOperatorId = firstUser.id;
+      }
 
       let rate = await prisma.printRate.findUnique({
         where: {
@@ -505,7 +575,7 @@ export const db = {
             wastageReasonOther: params.wastageReasonOther || undefined,
             wastagePhotoUrl: params.wastagePhotoUrl || undefined,
             remarks: params.remarks || undefined,
-            operatorId: params.operatorId,
+            operatorId: validOperatorId,
             productionDate,
           },
         }),
@@ -522,12 +592,12 @@ export const db = {
             movementType: 'STOCK_OUT',
             referenceId: params.jobNumber,
             reason: `Production for Job #${params.jobNumber} (${params.customerName})`,
-            userId: params.operatorId,
+            userId: validOperatorId,
           },
         }),
         prisma.auditLog.create({
           data: {
-            userId: params.operatorId,
+            userId: validOperatorId,
             action: 'JOB_CREATED',
             entity: 'JobProduction',
             entityId: params.jobNumber,
@@ -559,7 +629,7 @@ export const db = {
         grandTotalCost: Number(createdJob.grandTotalCost),
         mediaName: `${media.gsm} GSM ${media.name} (${media.size})`,
         machineName: machine.name,
-        operatorName: user?.name || 'Operator',
+        operatorName: userExists?.name || 'Operator',
         productionDate: createdJob.productionDate.toISOString().split('T')[0],
         createdAt: createdJob.createdAt.toISOString(),
         updatedAt: createdJob.updatedAt.toISOString(),
@@ -669,8 +739,8 @@ export const db = {
   // --- DAILY MACHINE COUNTERS ---
   counters: {
     getOrInitToday: async (machineId: string, dateStr?: string) => {
-      const todayDate = dateStr ? new Date(dateStr) : new Date();
       const dateOnlyStr = dateStr || new Date().toISOString().split('T')[0];
+      const targetDate = new Date(`${dateOnlyStr}T00:00:00.000Z`);
 
       // Aggregate today's job clicks
       const jobs = await prisma.jobProduction.findMany({
@@ -679,23 +749,32 @@ export const db = {
       const todaysJobs = jobs.filter((j) => j.productionDate.toISOString().split('T')[0] === dateOnlyStr);
       const totalJobClicksToday = todaysJobs.reduce((acc, j) => acc + j.machineClicks, 0);
 
-      const allCounters = await prisma.dailyMachineCounter.findMany({
-        where: { machineId },
-        orderBy: { date: 'desc' },
+      // Find existing counter for this machine & date
+      let counter = await prisma.dailyMachineCounter.findFirst({
+        where: {
+          machineId,
+          date: targetDate,
+        },
       });
 
-      let counter = allCounters.find((c) => c.date.toISOString().split('T')[0] === dateOnlyStr);
-
       if (!counter) {
-        let openingCounter = INITIAL_MACHINE.initialCounter;
-        if (allCounters.length > 0 && allCounters[0].closingCounter) {
-          openingCounter = allCounters[0].closingCounter;
-        }
+        // Find latest previous closing counter for opening counter reference
+        const prevCounter = await prisma.dailyMachineCounter.findFirst({
+          where: {
+            machineId,
+            date: { lt: targetDate },
+            closingCounter: { not: null },
+          },
+          orderBy: { date: 'desc' },
+        });
+
+        const machine = await prisma.machine.findUnique({ where: { id: machineId } });
+        const openingCounter = prevCounter?.closingCounter || machine?.currentCounter || INITIAL_MACHINE.initialCounter;
 
         counter = await prisma.dailyMachineCounter.create({
           data: {
             machineId,
-            date: todayDate,
+            date: targetDate,
             openingCounter,
             totalJobClicks: totalJobClicksToday,
             difference: 0,
@@ -713,7 +792,7 @@ export const db = {
       return {
         counter: {
           ...counter,
-          date: counter.date.toISOString().split('T')[0],
+          date: dateOnlyStr,
           createdAt: counter.createdAt.toISOString(),
           updatedAt: counter.updatedAt.toISOString(),
         },
@@ -740,6 +819,13 @@ export const db = {
         );
       }
 
+      let validUserId = params.userId;
+      const userExists = await prisma.user.findUnique({ where: { id: params.userId } });
+      if (!userExists) {
+        const firstUser = await prisma.user.findFirst();
+        if (firstUser) validUserId = firstUser.id;
+      }
+
       const [updatedCounter] = await prisma.$transaction([
         prisma.dailyMachineCounter.update({
           where: { id: counter.id },
@@ -751,7 +837,7 @@ export const db = {
             isMatched: recon.isMatched,
             mismatchReason: params.mismatchReason?.trim() || undefined,
             isClosed: true,
-            closedById: params.userId,
+            closedById: validUserId,
             closedAt: new Date(),
           },
         }),
@@ -761,7 +847,7 @@ export const db = {
         }),
         prisma.auditLog.create({
           data: {
-            userId: params.userId,
+            userId: validUserId,
             action: 'DAY_CLOSED',
             entity: 'DailyMachineCounter',
             entityId: counter.id,
@@ -779,7 +865,7 @@ export const db = {
 
       return {
         ...updatedCounter,
-        date: updatedCounter.date.toISOString().split('T')[0],
+        date: params.date || updatedCounter.date.toISOString().split('T')[0],
         createdAt: updatedCounter.createdAt.toISOString(),
         updatedAt: updatedCounter.updatedAt.toISOString(),
       };

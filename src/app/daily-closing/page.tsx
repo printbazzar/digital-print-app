@@ -15,11 +15,13 @@ import {
   RefreshCw,
   AlertCircle,
   FileCheck,
+  Edit2,
+  Unlock,
 } from 'lucide-react';
 import { reconcileMachineCounter } from '@/lib/calculations';
 
 export default function DailyClosingPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, isOwner, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const [counterData, setCounterData] = useState<any>(null);
@@ -30,6 +32,7 @@ export default function DailyClosingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
 
   const fetchCounterInfo = async () => {
     setLoading(true);
@@ -48,7 +51,12 @@ export default function DailyClosingPage() {
           if (d.counter.mismatchReason) {
             setMismatchReason(d.counter.mismatchReason);
           }
+        } else {
+          const defaultExpected = (d.counter?.openingCounter || 1067426) + (d.totalJobClicksToday || 0);
+          setClosingInput(defaultExpected);
         }
+      } else {
+        throw new Error('Could not load current meter status.');
       }
 
       if (histRes.ok) {
@@ -56,7 +64,7 @@ export default function DailyClosingPage() {
         setHistory(h.history || []);
       }
     } catch (err: any) {
-      setErrorMsg('Failed to load machine counter data.');
+      setErrorMsg(err.message || 'Failed to load machine counter data.');
     } finally {
       setLoading(false);
     }
@@ -105,8 +113,8 @@ export default function DailyClosingPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          machineId: counterData.machine.id,
-          date: counterData.counter.date,
+          machineId: counterData?.machine?.id || 'mach-c3070-001',
+          date: counterData?.counter?.date || new Date().toISOString().split('T')[0],
           closingCounter: Number(closingInput),
           mismatchReason: mismatchReason.trim() || undefined,
         }),
@@ -116,21 +124,16 @@ export default function DailyClosingPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to close day');
 
       setSuccessMsg('Day closed successfully! Machine counter locked and recorded.');
+      setEditMode(false);
       fetchCounterInfo();
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Error occurred while saving closing count');
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (authLoading || loading) {
-    return (
-      <div className="min-h-[80vh] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
-      </div>
-    );
-  }
+  if (authLoading) return null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
@@ -139,252 +142,288 @@ export default function DailyClosingPage() {
         <div>
           <div className="flex items-center space-x-2">
             <Gauge className="w-5 h-5 text-yellow-600" />
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-              Machine Counter & Day Closure
+            <h1 className="text-xl font-black text-slate-950 tracking-tight">
+              Machine Counter & Shift Closing
             </h1>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-yellow-100 text-slate-950 border border-yellow-300">
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-yellow-400 text-slate-950 border border-yellow-400">
               Konica Minolta C3070
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-1 font-medium">
             Reconcile physical machine meter readings against recorded digital print job clicks
           </p>
         </div>
 
         <button
           onClick={fetchCounterInfo}
-          className="flex items-center space-x-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition self-start sm:self-auto"
+          className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
         >
           <RefreshCw className="w-3.5 h-3.5" />
-          <span>Refresh Meters</span>
+          <span>Refresh Status</span>
         </button>
       </div>
 
-      {/* Success Notification */}
+      {/* Notifications */}
       {successMsg && (
-        <div className="bg-yellow-50 border border-yellow-300 rounded-2xl p-4 flex items-start space-x-3 text-emerald-900 text-xs shadow-xs">
+        <div className="bg-yellow-50 border border-yellow-300 rounded-2xl p-4 flex items-start space-x-3 text-slate-950 text-xs shadow-xs animate-fade-in">
           <CheckCircle2 className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
           <div className="flex-1 font-bold">{successMsg}</div>
         </div>
       )}
 
-      {/* Error Message */}
       {errorMsg && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start space-x-3 text-red-700 text-xs shadow-xs">
           <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-          <div className="flex-1 font-bold leading-relaxed">{errorMsg}</div>
+          <div className="flex-1 font-semibold">{errorMsg}</div>
         </div>
       )}
 
       {/* Main Reconciliation Card */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Columns: Counter Input & Comparison */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        {/* Status Strip */}
+        <div className="bg-slate-950 p-6 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center space-x-4">
+            <div className="p-3 bg-yellow-400 text-slate-950 rounded-xl font-bold">
+              <Gauge className="w-7 h-7 stroke-[2.5]" />
+            </div>
             <div>
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Shift Date: {counterData?.counter?.date}
-              </span>
-              <h2 className="text-base font-extrabold text-slate-900 mt-0.5">
-                Daily Counter Verification
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  AccurioPress C3070 Meter
+                </span>
+                {isClosed && !editMode ? (
+                  <span className="px-2.5 py-0.5 text-[11px] font-extrabold bg-yellow-400/20 text-yellow-300 border border-yellow-400/40 rounded-full flex items-center space-x-1">
+                    <Lock className="w-3 h-3" />
+                    <span>DAY CLOSED</span>
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 text-[11px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-400/30 rounded-full flex items-center space-x-1">
+                    <Clock className="w-3 h-3" />
+                    <span>SHIFT ACTIVE</span>
+                  </span>
+                )}
+              </div>
+              <h2 className="text-lg font-black text-white mt-1">
+                Shift Reconciliation: {counterData?.counter?.date || new Date().toISOString().split('T')[0]}
               </h2>
             </div>
-            {isClosed ? (
-              <span className="px-3 py-1 bg-yellow-100 text-slate-950 border border-yellow-300 rounded-full text-xs font-bold flex items-center space-x-1">
-                <Lock className="w-3.5 h-3.5" />
-                <span>DAY CLOSED</span>
-              </span>
-            ) : (
-              <span className="px-3 py-1 bg-amber-100 text-amber-800 border border-amber-200 rounded-full text-xs font-bold flex items-center space-x-1">
-                <Clock className="w-3.5 h-3.5" />
-                <span>PENDING CLOSURE</span>
-              </span>
-            )}
           </div>
 
-          <form onSubmit={handleCloseDay} className="space-y-5">
-            {/* Counter Readings Display */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Opening Counter (Read-only) */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                <div className="flex items-center justify-between text-slate-500 mb-1">
-                  <span className="text-xs font-bold uppercase tracking-wider">
-                    Opening Counter
-                  </span>
-                  <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded font-semibold">
-                    Auto Baseline
-                  </span>
-                </div>
-                <div className="text-2xl font-black text-slate-900">
-                  {opening.toLocaleString()}
-                </div>
-                <div className="text-[11px] text-slate-400 mt-1">
-                  Inherited from previous closing reading
-                </div>
-              </div>
+          {/* Quick Actions */}
+          {isClosed && !editMode && (
+            <button
+              onClick={() => setEditMode(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-white/10 hover:bg-white/20 text-yellow-400 text-xs font-bold rounded-xl transition border border-white/20"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+              <span>Edit / Update Closing Count</span>
+            </button>
+          )}
+        </div>
 
-              {/* Job Clicks Total */}
-              <div className="p-4 bg-yellow-50/50 border border-yellow-300 rounded-xl">
-                <div className="flex items-center justify-between text-slate-950 mb-1">
-                  <span className="text-xs font-bold uppercase tracking-wider">
-                    Total Job Clicks Recorded
-                  </span>
-                  <span className="text-[10px] bg-emerald-200 text-slate-950 px-1.5 py-0.2 rounded font-semibold">
-                    Live System Clicks
-                  </span>
-                </div>
-                <div className="text-2xl font-black text-slate-950">
-                  {jobClicks.toLocaleString()}
-                </div>
-                <div className="text-[11px] text-yellow-800 mt-1">
-                  Sum of all job clicks logged today
-                </div>
+        {/* 3 Step Reconciliation Form */}
+        <form onSubmit={handleCloseDay} className="p-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Step 1: Opening Counter */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between text-slate-500">
+                <span className="text-xs font-bold uppercase tracking-wider">1. Opening Counter</span>
+                <ShieldCheck className="w-4 h-4 text-slate-400" />
               </div>
-            </div>
-
-            {/* Closing Counter Entry */}
-            <div>
-              <label className="block text-xs font-extrabold text-slate-800 mb-1 uppercase tracking-wider">
-                Physical Machine Closing Counter *
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min={opening}
-                  required
-                  disabled={isClosed}
-                  value={closingInput}
-                  onChange={(e) => setClosingInput(e.target.value ? Number(e.target.value) : '')}
-                  placeholder={`e.g. ${(opening + jobClicks).toString()}`}
-                  className="w-full px-4 py-3 text-lg font-black text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl focus:bg-white focus:border-yellow-400 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
-                />
+              <div className="text-2xl font-black text-slate-900 font-mono">
+                {opening.toLocaleString()}
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Check the physical meter display on the Konica Minolta C3070 and enter the exact numerical reading.
+              <p className="text-[11px] text-slate-500 font-medium">
+                Baseline meter reading carried over from previous day closing
               </p>
             </div>
 
-            {/* Live Comparison Meter Status */}
-            {closingInput !== '' && (
-              <div
-                className={`p-4 rounded-xl border ${
-                  liveRecon.isMatched
-                    ? 'bg-yellow-50 border-yellow-300 text-emerald-900'
-                    : 'bg-amber-50 border-amber-200 text-amber-900'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    {liveRecon.isMatched ? (
-                      <CheckCircle2 className="w-5 h-5 text-yellow-600" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-amber-600" />
-                    )}
-                    <span className="text-sm font-extrabold">
-                      {liveRecon.isMatched ? 'METERS MATCHED PERFECTLY' : 'MACHINE COUNT MISMATCH DETECTED'}
-                    </span>
-                  </div>
-
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
-                      liveRecon.isMatched
-                        ? 'bg-yellow-400 text-slate-950 font-black'
-                        : 'bg-amber-600 text-white'
-                    }`}
-                  >
-                    Diff: {liveRecon.difference} Clicks
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3 text-xs bg-white/70 p-2.5 rounded-lg border border-slate-200/50">
-                  <div>
-                    <span className="text-slate-500 block">Machine Print Count:</span>
-                    <strong className="text-slate-900 font-bold">{liveRecon.machinePrintCount} clicks</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block">Job Production Total:</span>
-                    <strong className="text-slate-900 font-bold">{liveRecon.totalJobClicks} clicks</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block">Discrepancy:</span>
-                    <strong className={liveRecon.difference !== 0 ? 'text-amber-700 font-bold' : 'text-yellow-800 font-bold'}>
-                      {liveRecon.difference === 0 ? 'None (0)' : `${liveRecon.difference} clicks`}
-                    </strong>
-                  </div>
-                </div>
-
-                {/* If Mismatch: Enforce Mismatch Reason */}
-                {!liveRecon.isMatched && (
-                  <div className="mt-4 pt-3 border-t border-amber-200/80 space-y-2">
-                    <label className="block text-xs font-bold text-amber-900">
-                      Mandatory Mismatch Explanation Reason *
-                    </label>
-                    <textarea
-                      required
-                      disabled={isClosed}
-                      rows={2}
-                      value={mismatchReason}
-                      onChange={(e) => setMismatchReason(e.target.value)}
-                      placeholder="Explain reason for counter difference (e.g., test prints, unlogged jam clears, double clicks)..."
-                      className="w-full p-2.5 text-xs bg-white border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                    />
-                    <span className="text-[10px] text-amber-700 block">
-                      * This explanation will be permanently stamped in the audit log and day closure report.
-                    </span>
-                  </div>
-                )}
+            {/* Step 2: Today's Logged Clicks */}
+            <div className="p-4 bg-yellow-50/60 rounded-2xl border border-yellow-200 space-y-2">
+              <div className="flex items-center justify-between text-yellow-900">
+                <span className="text-xs font-bold uppercase tracking-wider">2. Logged Job Clicks</span>
+                <CheckCircle2 className="w-4 h-4 text-yellow-600" />
               </div>
-            )}
+              <div className="text-2xl font-black text-yellow-800 font-mono">
+                {jobClicks.toLocaleString()} clicks
+              </div>
+              <p className="text-[11px] text-slate-600 font-medium">
+                Sum of all Single-side (1x) and Double-side (2x) print jobs logged today
+              </p>
+            </div>
 
-            {/* Action Button */}
-            {!isClosed && (
-              <button
-                type="submit"
-                disabled={submitting || closingInput === ''}
-                className="w-full py-3 bg-slate-900 hover:bg-black text-white font-extrabold text-xs rounded-xl shadow-lg transition flex items-center justify-center space-x-2 disabled:opacity-50"
-              >
-                <FileCheck className="w-4 h-4 text-emerald-400" />
-                <span>{submitting ? 'Submitting Closure...' : 'Submit & Close Day'}</span>
-              </button>
-            )}
-          </form>
-        </div>
-
-        {/* Right 1 Column: Guidelines & Information */}
-        <div className="space-y-4">
-          <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 space-y-4">
-            <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center space-x-1.5">
-              <ShieldCheck className="w-4 h-4" />
-              <span>Day Closure Rules</span>
-            </h3>
-
-            <div className="space-y-2.5 text-xs text-slate-300 leading-relaxed">
-              <div className="p-2.5 bg-white/5 rounded-xl border border-white/5">
-                <strong className="text-white block mb-0.5">1. Automatic Chaining</strong>
-                Today's closing counter automatically becomes tomorrow's opening counter.
+            {/* Step 3: Physical Closing Meter Reading */}
+            <div className="p-4 bg-slate-950 text-white rounded-2xl border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-xs font-bold uppercase tracking-wider text-yellow-400">
+                  3. Physical Closing Meter *
+                </span>
+                <Lock className="w-4 h-4 text-yellow-400" />
               </div>
 
-              <div className="p-2.5 bg-white/5 rounded-xl border border-white/5">
-                <strong className="text-white block mb-0.5">2. No Silent Alterations</strong>
-                The system will never artificially modify the machine counter. Discrepancies are highlighted and audited.
+              <div>
+                <input
+                  type="number"
+                  required
+                  min={opening}
+                  disabled={isClosed && !editMode}
+                  value={closingInput}
+                  onChange={(e) => setClosingInput(e.target.value === '' ? '' : parseInt(e.target.value))}
+                  placeholder={`Min: ${opening}`}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-lg font-black text-yellow-400 font-mono focus:outline-none focus:ring-2 focus:ring-yellow-400 disabled:opacity-60"
+                />
               </div>
-
-              <div className="p-2.5 bg-white/5 rounded-xl border border-white/5">
-                <strong className="text-white block mb-0.5">3. Immutable Lock</strong>
-                Once day closure is completed, operator submission is locked to prevent accidental duplication.
-              </div>
+              <p className="text-[11px] text-slate-400">
+                Read directly from the Konica Minolta C3070 front LCD counter panel
+              </p>
             </div>
           </div>
-        </div>
+
+          {/* Reconciliation Math & Audit Verdict */}
+          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center space-x-2">
+                <ShieldCheck className="w-5 h-5 text-yellow-600" />
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                  Reconciliation Verification Verdict
+                </h3>
+              </div>
+              <div
+                className={`px-3 py-1 rounded-full text-xs font-black flex items-center space-x-1.5 ${
+                  liveRecon.isMatched
+                    ? 'bg-yellow-100 text-slate-950 border border-yellow-300'
+                    : 'bg-red-100 text-red-700 border border-red-300'
+                }`}
+              >
+                {liveRecon.isMatched ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-yellow-600" />
+                    <span>PERFECT MATCH (0 Clicks Delta)</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-4 h-4 text-red-600" />
+                    <span>COUNT MISMATCH ({liveRecon.difference > 0 ? '+' : ''}{liveRecon.difference} Clicks)</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+              <div>
+                <span className="text-slate-400 block font-medium">Calculated Machine Prints:</span>
+                <strong className="text-slate-900 font-black text-sm font-mono">
+                  {liveRecon.machinePrintCount} clicks
+                </strong>
+                <span className="text-[10px] text-slate-500 block">Closing ({closingVal}) - Opening ({opening})</span>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block font-medium">Logged Job Clicks:</span>
+                <strong className="text-slate-900 font-black text-sm font-mono">
+                  {liveRecon.totalJobClicks} clicks
+                </strong>
+                <span className="text-[10px] text-slate-500 block">From production ledger</span>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block font-medium">Discrepancy / Difference:</span>
+                <strong
+                  className={`font-black text-sm font-mono ${
+                    liveRecon.difference === 0 ? 'text-yellow-700' : 'text-red-600'
+                  }`}
+                >
+                  {liveRecon.difference} clicks
+                </strong>
+                <span className="text-[10px] text-slate-500 block">Machine Prints - Logged Jobs</span>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block font-medium">Shift Status:</span>
+                <strong className="text-slate-900 font-extrabold text-sm">
+                  {isClosed && !editMode ? 'Locked & Closed' : 'Ready to Close'}
+                </strong>
+              </div>
+            </div>
+
+            {/* If Mismatch Detected: Mandatory Reason Input */}
+            {!liveRecon.isMatched && (!isClosed || editMode) && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-3 animate-fade-in">
+                <div className="flex items-center space-x-2 text-xs font-bold text-red-800">
+                  <AlertTriangle className="w-4 h-4 text-red-600" />
+                  <span>Mandatory Discrepancy Reason Required</span>
+                </div>
+                <p className="text-xs text-red-700">
+                  The machine meter reading differs from recorded production jobs. Please explain the cause (e.g. Test prints, machine warm-up waste clicks, or missing job entries).
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    'Machine Test Print / Calibration Clicks',
+                    'Shift handover test charts',
+                    'Operator omitted logging small test batch',
+                    'Paper jam purge clicks',
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setMismatchReason(preset)}
+                      className="px-2.5 py-1 bg-white border border-red-200 rounded-lg text-[11px] font-semibold text-red-800 hover:bg-red-100 transition"
+                    >
+                      + {preset}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={mismatchReason}
+                  onChange={(e) => setMismatchReason(e.target.value)}
+                  placeholder="Explain exact cause of discrepancy..."
+                  className="w-full px-3.5 py-2.5 bg-white border border-red-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Submit Action */}
+          {(!isClosed || editMode) && (
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              {editMode && (
+                <button
+                  type="button"
+                  onClick={() => setEditMode(false)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-6 py-3 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-yellow-400/25 flex items-center space-x-2 transition transform active:scale-95 disabled:opacity-50"
+              >
+                <FileCheck className="w-4 h-4 stroke-[2.5]" />
+                <span>{submitting ? 'Saving...' : editMode ? 'Update Closed Counter' : 'Lock & Close Day'}</span>
+              </button>
+            </div>
+          )}
+        </form>
       </div>
 
-      {/* Historical Day Closures Table */}
+      {/* Historical Daily Closings Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-5 border-b border-slate-200 flex items-center space-x-2">
-          <History className="w-4 h-4 text-slate-500" />
-          <h3 className="text-sm font-bold text-slate-900">
-            Historical Machine Meter Closures ({history.length})
-          </h3>
+        <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <div className="flex items-center space-x-2">
+              <History className="w-4 h-4 text-yellow-600" />
+              <h2 className="text-sm font-black text-slate-900">
+                Machine Counter Closing History ({history.length})
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 font-medium">
+              Audit log of daily meter openings, closings, reconciled clicks, and mismatch notes
+            </p>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -394,10 +433,10 @@ export default function DailyClosingPage() {
                 <th className="py-3 px-4">Date</th>
                 <th className="py-3 px-4">Opening</th>
                 <th className="py-3 px-4">Closing</th>
-                <th className="py-3 px-4">Machine Clicks</th>
+                <th className="py-3 px-4">Machine Prints</th>
                 <th className="py-3 px-4">Job Clicks</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Reason / Notes</th>
+                <th className="py-3 px-4">Difference</th>
+                <th className="py-3 px-4">Verdict</th>
                 <th className="py-3 px-4">Closed By</th>
               </tr>
             </thead>
@@ -405,42 +444,41 @@ export default function DailyClosingPage() {
               {history.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-slate-400">
-                    No historical closing records yet.
+                    No historical machine closings recorded yet.
                   </td>
                 </tr>
               ) : (
-                history.map((h: any) => (
+                history.map((h) => (
                   <tr key={h.id} className="hover:bg-slate-50/80 transition">
-                    <td className="py-3 px-4 font-bold text-slate-900">{h.date}</td>
-                    <td className="py-3 px-4">{h.openingCounter?.toLocaleString()}</td>
-                    <td className="py-3 px-4">{h.closingCounter?.toLocaleString() || '-'}</td>
-                    <td className="py-3 px-4 font-bold text-slate-800">
-                      {h.machinePrintCount !== undefined ? h.machinePrintCount.toLocaleString() : '-'}
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{h.date}</td>
+                    <td className="py-3.5 px-4 font-mono text-slate-700">{h.openingCounter?.toLocaleString()}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{h.closingCounter?.toLocaleString()}</td>
+                    <td className="py-3.5 px-4 font-mono text-yellow-800 font-bold">{h.machinePrintCount?.toLocaleString()}</td>
+                    <td className="py-3.5 px-4 font-mono text-slate-700">{h.totalJobClicks?.toLocaleString()}</td>
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`font-mono font-bold ${
+                          h.difference === 0 ? 'text-yellow-700' : 'text-red-600'
+                        }`}
+                      >
+                        {h.difference > 0 ? `+${h.difference}` : h.difference}
+                      </span>
                     </td>
-                    <td className="py-3 px-4 text-yellow-800 font-bold">
-                      {h.totalJobClicks?.toLocaleString()}
-                    </td>
-                    <td className="py-3 px-4">
-                      {h.isClosed ? (
-                        h.isMatched ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-slate-950">
-                            MATCHED
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                            DIFF: {h.difference}
-                          </span>
-                        )
+                    <td className="py-3.5 px-4">
+                      {h.isMatched ? (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-yellow-100 text-slate-950 border border-yellow-300 rounded-full">
+                          MATCHED
+                        </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
-                          ACTIVE
+                        <span
+                          className="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 rounded-full"
+                          title={h.mismatchReason || 'No reason'}
+                        >
+                          MISMATCH
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-4 max-w-[200px] truncate text-slate-500">
-                      {h.mismatchReason || '-'}
-                    </td>
-                    <td className="py-3 px-4 text-slate-500">{h.closedByName || '-'}</td>
+                    <td className="py-3.5 px-4 text-slate-500">{h.closedByName || 'Operator'}</td>
                   </tr>
                 ))
               )}
