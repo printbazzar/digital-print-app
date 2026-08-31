@@ -1,0 +1,241 @@
+// Print Bazzar - Digital Printing Production Management System
+// Prisma Schema with Supabase & PostgreSQL Connection Pooling Support
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  OPERATOR
+}
+
+enum PrintType {
+  COLOUR
+  BW
+}
+
+enum PaperSize {
+  A4
+  A3
+}
+
+enum PrintSide {
+  SINGLE
+  DOUBLE
+}
+
+enum StockMovementType {
+  STOCK_IN
+  STOCK_OUT
+  STOCK_ADJUSTMENT
+}
+
+enum ReprintType {
+  PRODUCTION_REPRINT
+  CUSTOMER_ADDITIONAL
+}
+
+model User {
+  id           String             @id @default(uuid())
+  email        String             @unique
+  name         String
+  passwordHash String
+  role         Role               @default(OPERATOR)
+  isActive     Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  jobs         JobProduction[]
+  stockMoves   InventoryMovement[]
+  counters     DailyMachineCounter[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Machine {
+  id              String                @id @default(uuid())
+  name            String                @unique // e.g. "Konica Minolta C3070"
+  model           String                // "AccurioPress C3070"
+  department      String                @default("Digital Printing Production")
+  initialCounter  Int                   @default(1067426)
+  currentCounter  Int                   @default(1067426)
+  isActive        Boolean               @default(true)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  rates           PrintRate[]
+  dailyCounters   DailyMachineCounter[]
+  jobs            JobProduction[]
+
+  @@map("machines")
+}
+
+model PrintRate {
+  id         String    @id @default(uuid())
+  machineId  String
+  machine    Machine   @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  paperSize  PaperSize
+  printType  PrintType
+  rate       Decimal   @db.Decimal(10, 2)
+  gstPercent Decimal   @default(18.0) @db.Decimal(5, 2)
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([machineId, paperSize, printType])
+  @@map("print_rates")
+}
+
+model Media {
+  id                String              @id @default(uuid())
+  name              String              // e.g. "Art Board", "Maplitho", "Synthetic Sticker"
+  gsm               Int                 // e.g. 300, 100, 250
+  size              String              // e.g. "13x19", "12x18", "A4", "A3"
+  brand             String?             // e.g. "Century", "Bilt", "Generic"
+  currentStock      Int                 @default(0) // in physical sheets
+  minimumStockLevel Int                 @default(100)
+  unit              String              @default("sheets")
+  isActive          Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  movements         InventoryMovement[]
+  jobs              JobProduction[]
+
+  @@index([name, gsm, size])
+  @@map("media")
+}
+
+model InventoryMovement {
+  id           String            @id @default(uuid())
+  mediaId      String
+  media        Media             @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  quantity     Int               // positive for IN, negative for OUT, delta for ADJUST
+  openingStock Int
+  closingStock Int
+  movementType StockMovementType
+  referenceId  String?           // e.g. JobProduction ID or Note
+  reason       String?
+  userId       String
+  user         User              @relation(fields: [userId], references: [id])
+  createdAt    DateTime          @default(now())
+
+  @@index([mediaId, createdAt])
+  @@map("inventory_movements")
+}
+
+model WastageReason {
+  id        String          @id @default(uuid())
+  reason    String          @unique
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  jobs      JobProduction[]
+
+  @@map("wastage_reasons")
+}
+
+model JobProduction {
+  id                 String         @id @default(uuid())
+  jobNumber          String         // e.g. "PB-2026-0001"
+  customerName       String
+  product            String         // e.g. "Visiting Cards", "Brochure", "Flyer"
+  orderedQuantity    Int
+  printType          PrintType
+  paperSize          PaperSize
+  printSide          PrintSide
+  mediaId            String
+  media              Media          @relation(fields: [mediaId], references: [id])
+  machineId          String
+  machine            Machine        @relation(fields: [machineId], references: [id])
+  
+  goodPrints         Int            // physical good prints produced
+  wastage            Int            @default(0) // physical sheets wasted
+  reprint            Int            @default(0) // physical sheets reprinted
+  reprintType        ReprintType?
+  
+  // Authoritative calculations:
+  sheetConsumption   Int            // goodPrints + wastage + reprint
+  machineClicks      Int            // sheetConsumption * (SINGLE=1, DOUBLE=2)
+  unitCost           Decimal        @db.Decimal(10, 2)
+  totalCost          Decimal        @db.Decimal(10, 2)
+  gstAmount          Decimal        @db.Decimal(10, 2)
+  grandTotalCost     Decimal        @db.Decimal(10, 2)
+
+  wastageReasonId    String?
+  wastageReason      WastageReason? @relation(fields: [wastageReasonId], references: [id])
+  wastageReasonOther String?
+  wastagePhotoUrl    String?
+  remarks            String?
+
+  operatorId         String
+  operator           User           @relation(fields: [operatorId], references: [id])
+  productionDate     DateTime       @default(now())
+  dailyCounterId     String?
+  dailyCounter       DailyMachineCounter? @relation(fields: [dailyCounterId], references: [id])
+  
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([productionDate])
+  @@index([jobNumber])
+  @@index([operatorId])
+  @@map("job_productions")
+}
+
+model DailyMachineCounter {
+  id                String          @id @default(uuid())
+  machineId         String
+  machine           Machine         @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  date              DateTime        @db.Date
+  openingCounter    Int
+  closingCounter    Int?
+  machinePrintCount Int?           // closingCounter - openingCounter
+  totalJobClicks    Int             @default(0)
+  difference        Int             @default(0) // machinePrintCount - totalJobClicks
+  isMatched         Boolean         @default(true)
+  mismatchReason    String?
+  isClosed          Boolean         @default(false)
+  closedById        String?
+  closedBy          User?           @relation(fields: [closedById], references: [id])
+  closedAt          DateTime?
+  jobs              JobProduction[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([machineId, date])
+  @@map("daily_machine_counters")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  message   String
+  type      String   // "LOW_STOCK", "COUNTER_MISMATCH", "DAY_CLOSURE", "SYSTEM"
+  isRead    Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String   // "JOB_CREATED", "STOCK_RESTOCKED", "STOCK_ADJUSTED", "COUNTER_CLOSED", etc.
+  entity    String   // "JobProduction", "Media", "DailyMachineCounter", etc.
+  entityId  String
+  oldValue  Json?
+  newValue  Json?
+  reason    String?
+  timestamp DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
