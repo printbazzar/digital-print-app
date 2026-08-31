@@ -549,6 +549,15 @@ export const db = {
 
       const productionDate = params.productionDate ? new Date(params.productionDate) : new Date();
 
+      let validWastageReasonId = params.wastageReasonId || undefined;
+      if (validWastageReasonId) {
+        const wr = await prisma.wastageReason.findUnique({ where: { id: validWastageReasonId } });
+        if (!wr) {
+          const firstReason = await prisma.wastageReason.findFirst();
+          validWastageReasonId = firstReason?.id || undefined;
+        }
+      }
+
       const [createdJob] = await prisma.$transaction([
         prisma.jobProduction.create({
           data: {
@@ -571,7 +580,7 @@ export const db = {
             totalCost: calc.totalCost,
             gstAmount: calc.gstAmount,
             grandTotalCost: calc.grandTotalCost,
-            wastageReasonId: params.wastageReasonId || undefined,
+            wastageReasonId: validWastageReasonId,
             wastageReasonOther: params.wastageReasonOther || undefined,
             wastagePhotoUrl: params.wastagePhotoUrl || undefined,
             remarks: params.remarks || undefined,

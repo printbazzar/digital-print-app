@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ rates });
 }
 
-export async function PUT(request: NextRequest) {
+async function handleUpdateRate(request: NextRequest) {
   const { user, error } = requireOwner(request);
   if (error || !user) return NextResponse.json({ error: error || 'Forbidden: Owner only' }, { status: 403 });
 
@@ -32,4 +32,12 @@ export async function PUT(request: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
+}
+
+export async function PUT(request: NextRequest) {
+  return handleUpdateRate(request);
+}
+
+export async function PATCH(request: NextRequest) {
+  return handleUpdateRate(request);
 }
