@@ -19,7 +19,7 @@ import {
 import { exportToExcel, exportToPDF } from '@/lib/export-utils';
 
 export default function ReportsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isOwner } = useAuth();
   const router = useRouter();
 
   const [period, setPeriod] = useState('this_month');
@@ -66,7 +66,7 @@ export default function ReportsPage() {
   if (authLoading) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-400"></div>
       </div>
     );
   }
@@ -83,15 +83,18 @@ export default function ReportsPage() {
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2">
-            <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+            <FileSpreadsheet className="w-5 h-5 text-yellow-600" />
+            <h1 className="text-xl font-black text-slate-950 tracking-tight">
               Production Reports & Analytics
             </h1>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-yellow-400 text-slate-950 border border-yellow-400">
               Konica C3070
             </span>
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+              {isOwner ? '👑 Owner Access' : '👷 Operator Access'}
+            </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-1 font-medium">
             Filterable performance audits, sheet consumption ledgers, and exportable reports
           </p>
         </div>
@@ -101,7 +104,7 @@ export default function ReportsPage() {
           <button
             onClick={() => reportData && exportToExcel(reportData)}
             disabled={!reportData || jobsList.length === 0}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50"
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-sm transition disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
             <span>Export Excel (.xlsx)</span>
@@ -110,7 +113,7 @@ export default function ReportsPage() {
           <button
             onClick={() => reportData && exportToPDF(reportData)}
             disabled={!reportData || jobsList.length === 0}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50"
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-sm transition disabled:opacity-50"
           >
             <FileText className="w-4 h-4" />
             <span>Export PDF (.pdf)</span>
@@ -118,27 +121,29 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Filter Controls Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-3 text-xs">
-        <div className="flex items-center space-x-1 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-          <Filter className="w-3.5 h-3.5" />
+      {/* Filter Control Bar */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-3">
+        <div className="flex items-center space-x-1.5 text-xs font-bold text-slate-500 pr-2 border-r border-slate-200">
+          <Filter className="w-4 h-4 text-yellow-600" />
           <span>Filters:</span>
         </div>
 
-        {/* Period Selector */}
-        <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+        {/* Preset Period Buttons */}
+        <div className="flex items-center bg-slate-100 p-1 rounded-xl">
           {[
             { key: 'today', label: 'Today' },
             { key: 'yesterday', label: 'Yesterday' },
             { key: 'this_week', label: 'This Week' },
             { key: 'this_month', label: 'This Month' },
-            { key: 'custom', label: 'Custom' },
+            { key: 'custom', label: 'Custom Date' },
           ].map((p) => (
             <button
               key={p.key}
               onClick={() => setPeriod(p.key)}
-              className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
-                period === p.key ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                period === p.key
+                  ? 'bg-slate-950 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               {p.label}
@@ -146,56 +151,50 @@ export default function ReportsPage() {
           ))}
         </div>
 
-        {/* Custom Date Inputs if Custom Selected */}
+        {/* Custom Range Picker */}
         {period === 'custom' && (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+              className="text-xs bg-transparent border-0 font-semibold text-slate-800 focus:outline-none"
             />
-            <span className="text-slate-400">to</span>
+            <span className="text-slate-400 font-bold text-xs">to</span>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+              className="text-xs bg-transparent border-0 font-semibold text-slate-800 focus:outline-none"
             />
-            <button
-              onClick={fetchReport}
-              className="px-2.5 py-1 bg-emerald-600 text-white font-bold rounded-lg text-xs"
-            >
-              Apply
-            </button>
           </div>
         )}
 
-        {/* Print Type Filter */}
+        {/* Filter by Print Type */}
         <select
           value={printType}
           onChange={(e) => setPrintType(e.target.value)}
-          className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold"
+          className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none"
         >
-          <option value="">All Print Modes</option>
+          <option value="">All Print Types</option>
           <option value="COLOUR">Colour Only</option>
           <option value="BW">B&W Only</option>
         </select>
 
-        {/* Paper Size Filter */}
+        {/* Filter by Paper Size */}
         <select
           value={paperSize}
           onChange={(e) => setPaperSize(e.target.value)}
-          className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold"
+          className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none"
         >
-          <option value="">All Sizes</option>
-          <option value="A4">A4 Size</option>
-          <option value="A3">A3 Size</option>
+          <option value="">All Paper Sizes</option>
+          <option value="A4">A4</option>
+          <option value="A3">A3 (13x19)</option>
         </select>
 
         <button
           onClick={fetchReport}
-          className="ml-auto flex items-center space-x-1 text-slate-500 hover:text-slate-800 font-bold"
+          className="ml-auto flex items-center space-x-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           <span>Refresh</span>
@@ -203,7 +202,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className={`grid grid-cols-2 sm:grid-cols-3 ${isOwner ? 'lg:grid-cols-6' : 'lg:grid-cols-5'} gap-3`}>
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
           <div className="text-[10px] font-bold text-slate-400 uppercase">Jobs Logged</div>
           <div className="text-xl font-black text-slate-900 mt-0.5">{s.totalJobs || 0}</div>
@@ -211,7 +210,7 @@ export default function ReportsPage() {
 
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
           <div className="text-[10px] font-bold text-slate-400 uppercase">Total Clicks</div>
-          <div className="text-xl font-black text-emerald-700 mt-0.5">{s.totalClicks?.toLocaleString() || 0}</div>
+          <div className="text-xl font-black text-yellow-700 mt-0.5">{s.totalClicks?.toLocaleString() || 0}</div>
         </div>
 
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
@@ -231,10 +230,12 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
-          <div className="text-[10px] font-bold text-slate-400 uppercase">Grand Cost (INR)</div>
-          <div className="text-xl font-black text-purple-900 mt-0.5">₹{s.grandTotalCost?.toLocaleString() || 0}</div>
-        </div>
+        {isOwner && (
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
+            <div className="text-[10px] font-bold text-yellow-800 uppercase">Grand Cost (INR)</div>
+            <div className="text-xl font-black text-slate-900 mt-0.5">₹{s.grandTotalCost?.toLocaleString() || 0}</div>
+          </div>
+        )}
       </div>
 
       {/* Breakdowns Grid */}
@@ -242,7 +243,7 @@ export default function ReportsPage() {
         {/* Operator Performance */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
           <div className="flex items-center space-x-1.5 text-xs font-bold text-slate-900">
-            <User className="w-4 h-4 text-emerald-600" />
+            <User className="w-4 h-4 text-yellow-600" />
             <h3>Operator Performance ({opList.length})</h3>
           </div>
 
@@ -344,14 +345,14 @@ export default function ReportsPage() {
                 <th className="py-3 px-4">Wastage</th>
                 <th className="py-3 px-4">Sheets</th>
                 <th className="py-3 px-4">Clicks</th>
-                <th className="py-3 px-4">Grand Cost</th>
+                {isOwner && <th className="py-3 px-4">Grand Cost</th>}
                 <th className="py-3 px-4">Operator</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
               {jobsList.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-8 text-center text-slate-400">
+                  <td colSpan={isOwner ? 12 : 11} className="py-8 text-center text-slate-400">
                     No production jobs logged in this filtered period.
                   </td>
                 </tr>
@@ -364,11 +365,11 @@ export default function ReportsPage() {
                     <td className="py-3 px-4 text-slate-600">{j.product}</td>
                     <td className="py-3 px-4 text-slate-800 truncate max-w-[140px]">{j.mediaName}</td>
                     <td className="py-3 px-4">
-                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
                         {j.paperSize} • {j.printType} • {j.printSide === 'DOUBLE' ? '2-Side' : '1-Side'}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-emerald-700 font-bold">{j.goodPrints}</td>
+                    <td className="py-3 px-4 text-slate-900 font-bold">{j.goodPrints}</td>
                     <td className="py-3 px-4">
                       {j.wastage > 0 ? (
                         <span className="text-red-600 font-bold">+{j.wastage}</span>
@@ -378,7 +379,7 @@ export default function ReportsPage() {
                     </td>
                     <td className="py-3 px-4 font-bold text-slate-900">{j.sheetConsumption}</td>
                     <td className="py-3 px-4 font-bold text-slate-900">{j.machineClicks}</td>
-                    <td className="py-3 px-4 font-bold text-purple-900">₹{j.grandTotalCost}</td>
+                    {isOwner && <td className="py-3 px-4 font-bold text-purple-900">₹{j.grandTotalCost}</td>}
                     <td className="py-3 px-4 text-slate-500">{j.operatorName}</td>
                   </tr>
                 ))

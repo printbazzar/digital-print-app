@@ -15,11 +15,12 @@ import {
   Info,
   DollarSign,
   FileCheck,
+  ShieldCheck,
 } from 'lucide-react';
 import { calculateJobProduction, PrintSide, PaperSize, PrintType } from '@/lib/calculations';
 
 export default function ProductionEntryPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isOwner } = useAuth();
   const router = useRouter();
 
   // Master lists
@@ -95,46 +96,44 @@ export default function ProductionEntryPage() {
 
     if (user) {
       loadMasters();
-      // Generate default job number
       const rand = Math.floor(1000 + Math.random() * 9000);
       setJobNumber(`PB-${new Date().getFullYear()}-${rand}`);
     }
   }, [user]);
 
-  // Find active rate for preview
+  // Find active rate
   const activeRate = rates.find(
     (r) =>
       r.machineId === selectedMachineId &&
       r.paperSize === paperSize &&
       r.printType === printType
   );
+  const unitRateVal = activeRate ? activeRate.rate : (paperSize === 'A3' ? (printType === 'COLOUR' ? 4.25 : 1.10) : (printType === 'COLOUR' ? 2.90 : 1.10));
+  const gstPercentVal = activeRate?.gstPercent !== undefined ? activeRate.gstPercent : 18.0;
 
-  const selectedMedia = mediaList.find((m) => m.id === selectedMediaId);
-
-  // Live calculation preview
-  const g = Number(goodPrints) || 0;
-  const w = Number(wastage) || 0;
-  const r = Number(reprint) || 0;
-  const unitRateVal = activeRate?.rate ?? (paperSize === 'A3' ? (printType === 'COLOUR' ? 4.25 : 1.10) : (printType === 'COLOUR' ? 2.90 : 1.10));
-  const gstPercentVal = activeRate?.gstPercent ?? 18.0;
+  // Live calculations
+  const g = typeof goodPrints === 'number' ? goodPrints : 0;
+  const w = typeof wastage === 'number' ? wastage : 0;
+  const rep = typeof reprint === 'number' ? reprint : 0;
 
   const liveCalc = calculateJobProduction({
     goodPrints: g,
     wastage: w,
-    reprint: r,
+    reprint: rep,
     printSide,
     unitRate: unitRateVal,
     gstPercent: gstPercentVal,
   });
 
+  const selectedMedia = mediaList.find((m) => m.id === selectedMediaId);
   const isStockAvailable = selectedMedia ? selectedMedia.currentStock >= liveCalc.sheetConsumption : true;
 
+  // Handle Photo Upload
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadingPhoto(true);
-    setErrorMsg(null);
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -144,70 +143,78 @@ export default function ProductionEntryPage() {
         body: formData,
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
-      setWastagePhotoUrl(data.url);
+      const json = await res.json();
+      if (res.ok && json.url) {
+        setWastagePhotoUrl(json.url);
+      } else {
+        alert(json.error || 'Failed to upload image');
+      }
     } catch (err: any) {
-      setErrorMsg(`Photo upload failed: ${err.message}`);
+      alert('Upload failed: ' + err.message);
     } finally {
       setUploadingPhoto(false);
     }
   };
 
+  // Form Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessResult(null);
 
-    if (!jobNumber.trim() || !customerName.trim() || !product.trim()) {
-      setErrorMsg('Please fill in Job Number, Customer Name, and Product.');
+    if (g <= 0) {
+      setErrorMsg('Good Prints produced must be greater than 0.');
       return;
     }
 
-    if (!orderedQuantity || Number(orderedQuantity) <= 0) {
-      setErrorMsg('Ordered quantity must be greater than 0.');
+    if (!selectedMachineId) {
+      setErrorMsg('Please select a printing machine.');
       return;
     }
 
-    if (goodPrints === '' || Number(goodPrints) < 0) {
-      setErrorMsg('Please enter good prints count.');
+    if (!selectedMediaId) {
+      setErrorMsg('Please select a paper media.');
       return;
     }
 
     if (w > 0 && !wastageReasonId) {
-      setErrorMsg('Please select a Wastage Reason for the recorded wastage.');
+      setErrorMsg('Wastage Reason is required when wastage is greater than 0.');
       return;
     }
 
     if (!isStockAvailable) {
-      setErrorMsg(`Insufficient stock: Only ${selectedMedia?.currentStock} sheets available in inventory.`);
+      setErrorMsg(
+        `Insufficient Media Stock! Required: ${liveCalc.sheetConsumption} sheets, Available: ${selectedMedia?.currentStock || 0} sheets.`
+      );
       return;
     }
 
     setSubmitting(true);
     try {
+      const payload = {
+        jobNumber,
+        customerName,
+        product,
+        orderedQuantity: typeof orderedQuantity === 'number' ? orderedQuantity : g,
+        printType,
+        paperSize,
+        printSide,
+        mediaId: selectedMediaId,
+        machineId: selectedMachineId,
+        goodPrints: g,
+        wastage: w,
+        reprint: rep,
+        reprintType: rep > 0 ? reprintType : undefined,
+        wastageReasonId: w > 0 ? wastageReasonId : undefined,
+        wastageReasonOther: w > 0 && wastageReasonId === 'wr-10' ? wastageReasonOther : undefined,
+        wastagePhotoUrl: wastagePhotoUrl || undefined,
+        remarks: remarks || undefined,
+      };
+
       const res = await fetch('/api/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobNumber: jobNumber.trim(),
-          customerName: customerName.trim(),
-          product: product.trim(),
-          orderedQuantity: Number(orderedQuantity),
-          printType,
-          paperSize,
-          printSide,
-          mediaId: selectedMediaId,
-          machineId: selectedMachineId,
-          goodPrints: Number(goodPrints),
-          wastage: w,
-          reprint: r,
-          reprintType: r > 0 ? reprintType : undefined,
-          wastageReasonId: w > 0 ? wastageReasonId : undefined,
-          wastageReasonOther: w > 0 && wastageReasonId === 'wr-10' ? wastageReasonOther : undefined,
-          wastagePhotoUrl: wastagePhotoUrl || undefined,
-          remarks: remarks.trim() || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -216,25 +223,22 @@ export default function ProductionEntryPage() {
       }
 
       setSuccessResult(data.job);
-      // Refresh media inventory
-      const medRes = await fetch('/api/media');
-      if (medRes.ok) {
-        const d = await medRes.json();
-        setMediaList(d.media || []);
-      }
+      setMediaList((prev) =>
+        prev.map((m) =>
+          m.id === selectedMediaId
+            ? { ...m, currentStock: m.currentStock - liveCalc.sheetConsumption }
+            : m
+        )
+      );
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Error occurred');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleResetForNext = () => {
-    const rand = Math.floor(1000 + Math.random() * 9000);
-    setJobNumber(`PB-${new Date().getFullYear()}-${rand}`);
-    setCustomerName('');
-    setProduct('');
-    setOrderedQuantity('');
+    setSuccessResult(null);
     setGoodPrints('');
     setWastage(0);
     setReprint(0);
@@ -242,9 +246,14 @@ export default function ProductionEntryPage() {
     setWastageReasonOther('');
     setWastagePhotoUrl('');
     setRemarks('');
-    setSuccessResult(null);
-    setErrorMsg(null);
+    setOrderedQuantity('');
+    setCustomerName('');
+    setProduct('');
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    setJobNumber(`PB-${new Date().getFullYear()}-${rand}`);
   };
+
+  if (authLoading) return null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
@@ -252,11 +261,11 @@ export default function ProductionEntryPage() {
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center space-x-2">
-            <Printer className="w-5 h-5 text-emerald-600" />
+            <Printer className="w-5 h-5 text-yellow-600" />
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
               Production Entry
             </h1>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-yellow-100 text-slate-950 border border-yellow-300">
               Konica Minolta C3070
             </span>
           </div>
@@ -279,37 +288,44 @@ export default function ProductionEntryPage() {
 
       {/* Success Confirmation Card */}
       {successResult && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-emerald-950 shadow-md">
+        <div className="bg-yellow-50 border border-yellow-300 rounded-2xl p-6 text-slate-950 shadow-md animate-fade-in">
           <div className="flex items-start space-x-3">
-            <CheckCircle2 className="w-6 h-6 text-emerald-600 mt-0.5 flex-shrink-0" />
+            <CheckCircle2 className="w-6 h-6 text-yellow-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <h2 className="text-base font-bold text-emerald-900">
+              <h2 className="text-base font-black text-slate-950">
                 Production Entry Saved Successfully!
               </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 bg-white/80 p-3.5 rounded-xl border border-emerald-200 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 bg-white p-3.5 rounded-xl border border-yellow-300 text-xs">
                 <div>
                   <span className="text-slate-500 font-medium block">Job Number:</span>
                   <strong className="text-slate-900 font-extrabold text-sm">{successResult.jobNumber}</strong>
                 </div>
                 <div>
                   <span className="text-slate-500 font-medium block">Machine Clicks:</span>
-                  <strong className="text-emerald-700 font-extrabold text-sm">{successResult.machineClicks} clicks</strong>
+                  <strong className="text-yellow-700 font-extrabold text-sm">{successResult.machineClicks} clicks</strong>
                 </div>
                 <div>
                   <span className="text-slate-500 font-medium block">Sheets Consumed:</span>
                   <strong className="text-slate-900 font-extrabold text-sm">{successResult.sheetConsumption} sheets</strong>
                 </div>
-                <div>
-                  <span className="text-slate-500 font-medium block">Total Cost:</span>
-                  <strong className="text-purple-900 font-extrabold text-sm">₹{successResult.grandTotalCost}</strong>
-                </div>
+                {isOwner ? (
+                  <div>
+                    <span className="text-slate-500 font-medium block">Total Cost:</span>
+                    <strong className="text-purple-900 font-extrabold text-sm">₹{successResult.grandTotalCost}</strong>
+                  </div>
+                ) : (
+                  <div>
+                    <span className="text-slate-500 font-medium block">Operator:</span>
+                    <strong className="text-slate-800 font-extrabold text-sm">{successResult.operatorName}</strong>
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={handleResetForNext}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5"
+                  className="px-4 py-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-md transition flex items-center space-x-1.5"
                 >
                   <span>Enter Next Job</span>
                   <ArrowRight className="w-4 h-4" />
@@ -356,7 +372,7 @@ export default function ProductionEntryPage() {
                   value={jobNumber}
                   onChange={(e) => setJobNumber(e.target.value)}
                   placeholder="PB-2026-0001"
-                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
                 />
               </div>
 
@@ -370,7 +386,7 @@ export default function ProductionEntryPage() {
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="e.g. Apex Marketing"
-                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
                 />
               </div>
 
@@ -384,7 +400,7 @@ export default function ProductionEntryPage() {
                   value={product}
                   onChange={(e) => setProduct(e.target.value)}
                   placeholder="e.g. Visiting Cards, Brochure"
-                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
                 />
               </div>
             </div>
@@ -398,35 +414,51 @@ export default function ProductionEntryPage() {
                 min="1"
                 required
                 value={orderedQuantity}
-                onChange={(e) => setOrderedQuantity(e.target.value ? Number(e.target.value) : '')}
-                placeholder="100"
-                className="w-full sm:w-1/3 px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                onChange={(e) => setOrderedQuantity(e.target.value === '' ? '' : parseInt(e.target.value))}
+                placeholder="e.g. 500"
+                className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
               />
             </div>
           </div>
 
-          <hr className="border-slate-100" />
-
-          {/* Section 2: Press & Print Configuration */}
-          <div className="space-y-4">
-            <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center space-x-1.5">
-              <span>2. Print & Media Parameters</span>
+          {/* Section 2: Machine & Technical Specs */}
+          <div className="pt-4 border-t border-slate-100 space-y-4">
+            <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+              2. Print Specifications & Media Selection
             </h3>
 
-            {/* Print Type, Paper Size, Side Pills */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Print Type */}
+              {/* Machine Selection */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Print Mode
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Printing Machine *
+                </label>
+                <select
+                  required
+                  value={selectedMachineId}
+                  onChange={(e) => setSelectedMachineId(e.target.value)}
+                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:outline-none"
+                >
+                  {machines.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Print Type: COLOUR vs B&W */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Print Type *
                 </label>
                 <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl">
                   <button
                     type="button"
                     onClick={() => setPrintType('COLOUR')}
-                    className={`py-2 text-xs font-bold rounded-lg transition ${
+                    className={`py-1.5 text-xs font-bold rounded-lg transition ${
                       printType === 'COLOUR'
-                        ? 'bg-blue-600 text-white shadow-xs'
+                        ? 'bg-yellow-400 text-slate-950 font-black shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -435,9 +467,9 @@ export default function ProductionEntryPage() {
                   <button
                     type="button"
                     onClick={() => setPrintType('BW')}
-                    className={`py-2 text-xs font-bold rounded-lg transition ${
+                    className={`py-1.5 text-xs font-bold rounded-lg transition ${
                       printType === 'BW'
-                        ? 'bg-slate-800 text-white shadow-xs'
+                        ? 'bg-slate-900 text-white font-black shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -446,18 +478,18 @@ export default function ProductionEntryPage() {
                 </div>
               </div>
 
-              {/* Paper Size */}
+              {/* Paper Size: A4 vs A3 */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Paper Size
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Paper Size *
                 </label>
                 <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl">
                   <button
                     type="button"
                     onClick={() => setPaperSize('A4')}
-                    className={`py-2 text-xs font-bold rounded-lg transition ${
+                    className={`py-1.5 text-xs font-bold rounded-lg transition ${
                       paperSize === 'A4'
-                        ? 'bg-emerald-600 text-white shadow-xs'
+                        ? 'bg-slate-900 text-white font-black shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -466,128 +498,166 @@ export default function ProductionEntryPage() {
                   <button
                     type="button"
                     onClick={() => setPaperSize('A3')}
-                    className={`py-2 text-xs font-bold rounded-lg transition ${
+                    className={`py-1.5 text-xs font-bold rounded-lg transition ${
                       paperSize === 'A3'
-                        ? 'bg-emerald-600 text-white shadow-xs'
+                        ? 'bg-slate-900 text-white font-black shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    A3
-                  </button>
-                </div>
-              </div>
-
-              {/* Side (Single vs Double) */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Sides (Duplex / Simplex)
-                </label>
-                <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setPrintSide('SINGLE')}
-                    className={`py-2 text-xs font-bold rounded-lg transition ${
-                      printSide === 'SINGLE'
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    1-Side (1 clk)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPrintSide('DOUBLE')}
-                    className={`py-2 text-xs font-bold rounded-lg transition ${
-                      printSide === 'DOUBLE'
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    2-Side (2 clk)
+                    A3 (13x19)
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Media Dropdown */}
+            {/* Print Side: Single vs Double */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Select Media / Paper Stock *
+                Print Side (Click Multiplier) *
               </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPrintSide('SINGLE')}
+                  className={`p-3 rounded-xl border text-left flex items-start space-x-3 transition ${
+                    printSide === 'SINGLE'
+                      ? 'border-yellow-400 bg-yellow-50 text-slate-950 font-bold'
+                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="w-5 h-5 rounded-full border border-current flex items-center justify-center mt-0.5 flex-shrink-0">
+                    {printSide === 'SINGLE' && <div className="w-2.5 h-2.5 rounded-full bg-slate-950" />}
+                  </div>
+                  <div>
+                    <div className="text-xs font-extrabold">Single-side (Simplex)</div>
+                    <div className="text-[10px] text-slate-500 font-normal">
+                      1 physical sheet = <strong>1 machine click</strong>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPrintSide('DOUBLE')}
+                  className={`p-3 rounded-xl border text-left flex items-start space-x-3 transition ${
+                    printSide === 'DOUBLE'
+                      ? 'border-yellow-400 bg-yellow-50 text-slate-950 font-bold'
+                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="w-5 h-5 rounded-full border border-current flex items-center justify-center mt-0.5 flex-shrink-0">
+                    {printSide === 'DOUBLE' && <div className="w-2.5 h-2.5 rounded-full bg-slate-950" />}
+                  </div>
+                  <div>
+                    <div className="text-xs font-extrabold">Double-side (Duplex)</div>
+                    <div className="text-[10px] text-slate-500 font-normal">
+                      1 physical sheet = <strong>2 machine clicks</strong>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Media Selector */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700">
+                  Paper / Substrate Media *
+                </label>
+                {selectedMedia && (
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    Current Stock:{' '}
+                    <strong
+                      className={
+                        selectedMedia.currentStock < 200
+                          ? 'text-red-600 font-extrabold'
+                          : 'text-yellow-700 font-extrabold'
+                      }
+                    >
+                      {selectedMedia.currentStock} sheets
+                    </strong>
+                  </span>
+                )}
+              </div>
               <select
+                required
                 value={selectedMediaId}
                 onChange={(e) => setSelectedMediaId(e.target.value)}
-                className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:outline-none"
               >
                 {mediaList.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.gsm} GSM {m.name} ({m.size}) — {m.brand || 'Generic'} [Stock: {m.currentStock} sheets]
+                    {m.gsm} GSM {m.name} ({m.size}) — {m.brand || 'Generic'} (Stock: {m.currentStock} sheets)
                   </option>
                 ))}
               </select>
             </div>
           </div>
 
-          <hr className="border-slate-100" />
-
-          {/* Section 3: Production Counts */}
-          <div className="space-y-4">
-            <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center space-x-1.5">
-              <span>3. Actual Shift Output Counts</span>
+          {/* Section 3: Physical Production Quantities */}
+          <div className="pt-4 border-t border-slate-100 space-y-4">
+            <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+              3. Production Quantities (Physical Sheets)
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Good Prints (Physical Sheets) *
+              {/* Good Prints */}
+              <div className="bg-yellow-50/60 p-3 rounded-xl border border-yellow-200">
+                <label className="block text-xs font-extrabold text-slate-900 mb-1">
+                  Good Prints (Sheets) *
                 </label>
                 <input
                   type="number"
-                  min="0"
+                  min="1"
                   required
                   value={goodPrints}
-                  onChange={(e) => setGoodPrints(e.target.value ? Number(e.target.value) : '')}
-                  placeholder="e.g. 100"
-                  className="w-full px-3 py-2 text-sm font-bold text-emerald-900 bg-emerald-50/50 border border-emerald-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  onChange={(e) => setGoodPrints(e.target.value === '' ? '' : parseInt(e.target.value))}
+                  placeholder="e.g. 500"
+                  className="w-full px-3 py-2 text-sm font-extrabold bg-white border border-yellow-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-yellow-400 focus:outline-none"
                 />
+                <span className="text-[10px] text-slate-500 mt-1 block">Successfully printed sheets</span>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+              {/* Wastage */}
+              <div className="bg-red-50/50 p-3 rounded-xl border border-red-200">
+                <label className="block text-xs font-extrabold text-red-900 mb-1">
                   Wastage (Sheets)
                 </label>
                 <input
                   type="number"
                   min="0"
                   value={wastage}
-                  onChange={(e) => setWastage(e.target.value ? Number(e.target.value) : 0)}
+                  onChange={(e) => setWastage(e.target.value === '' ? '' : parseInt(e.target.value))}
                   placeholder="0"
-                  className="w-full px-3 py-2 text-sm font-bold text-red-900 bg-red-50/50 border border-red-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-red-500 focus:outline-none"
+                  className="w-full px-3 py-2 text-sm font-extrabold bg-white border border-red-300 rounded-lg text-red-900 focus:ring-2 focus:ring-red-400 focus:outline-none"
                 />
+                <span className="text-[10px] text-red-600 mt-1 block">Damaged/Spoiled physical sheets</span>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+              {/* Reprint */}
+              <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200">
+                <label className="block text-xs font-extrabold text-amber-900 mb-1">
                   Reprint (Sheets)
                 </label>
                 <input
                   type="number"
                   min="0"
                   value={reprint}
-                  onChange={(e) => setReprint(e.target.value ? Number(e.target.value) : 0)}
+                  onChange={(e) => setReprint(e.target.value === '' ? '' : parseInt(e.target.value))}
                   placeholder="0"
-                  className="w-full px-3 py-2 text-sm font-bold text-blue-900 bg-blue-50/50 border border-blue-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  className="w-full px-3 py-2 text-sm font-extrabold bg-white border border-amber-300 rounded-lg text-amber-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
                 />
+                <span className="text-[10px] text-amber-700 mt-1 block">Additional replacement prints</span>
               </div>
             </div>
 
-            {/* If Reprint > 0: Reprint Scenario */}
-            {r > 0 && (
-              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl">
-                <label className="block text-xs font-bold text-blue-900 mb-1">
-                  Reprint Scenario Type
+            {/* If Reprint > 0: Specify Type */}
+            {rep > 0 && (
+              <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2">
+                <label className="block text-xs font-bold text-amber-950">
+                  Reprint Reason Classification *
                 </label>
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <label className="flex items-center space-x-1.5 text-xs text-slate-700 font-medium">
                     <input
                       type="radio"
@@ -595,7 +665,7 @@ export default function ProductionEntryPage() {
                       checked={reprintType === 'PRODUCTION_REPRINT'}
                       onChange={() => setReprintType('PRODUCTION_REPRINT')}
                     />
-                    <span>1. Production Reprint</span>
+                    <span>1. Production Issue (Machine / Quality / Color)</span>
                   </label>
                   <label className="flex items-center space-x-1.5 text-xs text-slate-700 font-medium">
                     <input
@@ -672,7 +742,7 @@ export default function ProductionEntryPage() {
                       />
                     </label>
                     {wastagePhotoUrl && (
-                      <span className="text-xs font-semibold text-emerald-700 flex items-center space-x-1">
+                      <span className="text-xs font-semibold text-yellow-800 flex items-center space-x-1">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Photo attached</span>
                       </span>
@@ -691,7 +761,7 @@ export default function ProductionEntryPage() {
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
                 placeholder="Optional operator notes..."
-                className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
               />
             </div>
           </div>
@@ -699,16 +769,16 @@ export default function ProductionEntryPage() {
 
         {/* Right 1 Column: Live Authoritative Calculation Summary */}
         <div className="space-y-5">
-          <div className="bg-gradient-to-b from-slate-900 to-slate-800 text-white p-5 rounded-2xl shadow-xl border border-slate-700 space-y-4 sticky top-20">
-            <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
+          <div className="bg-slate-950 text-white p-5 rounded-2xl shadow-xl border border-slate-800 space-y-4 sticky top-20">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center space-x-1.5">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-300">
-                  Live Calculations
+                <Sparkles className="w-4 h-4 text-yellow-400" />
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-200">
+                  {isOwner ? 'Production & Financial Preview' : 'Production Summary'}
                 </h3>
               </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                Authoritative Math
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-yellow-400/20 text-yellow-300 border border-yellow-400/40">
+                {isOwner ? 'Owner View' : 'Operator View'}
               </span>
             </div>
 
@@ -723,7 +793,7 @@ export default function ProductionEntryPage() {
 
               <div className="flex items-center justify-between py-1 border-b border-white/5">
                 <span className="text-slate-400">Machine Clicks Generated:</span>
-                <span className="font-extrabold text-base text-emerald-400">
+                <span className="font-extrabold text-base text-yellow-400">
                   {liveCalc.machineClicks} clicks
                 </span>
               </div>
@@ -737,9 +807,9 @@ export default function ProductionEntryPage() {
                 <span className="text-slate-400 block mb-1">Inventory Verification:</span>
                 {selectedMedia ? (
                   isStockAvailable ? (
-                    <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center justify-between">
+                    <div className="p-2 rounded-lg bg-yellow-400/10 border border-yellow-400/30 text-yellow-300 flex items-center justify-between">
                       <span>Stock Available ({selectedMedia.currentStock} sheets)</span>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <CheckCircle2 className="w-4 h-4 text-yellow-400" />
                     </div>
                   ) : (
                     <div className="p-2 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 flex items-center justify-between">
@@ -752,34 +822,51 @@ export default function ProductionEntryPage() {
                 )}
               </div>
 
-              {/* Cost Calculation */}
-              <div className="pt-2 border-t border-white/10 space-y-1.5">
-                <div className="flex items-center justify-between text-slate-400">
-                  <span>Base Print Rate:</span>
-                  <span className="font-semibold text-white">₹{liveCalc.unitCost} / click</span>
+              {/* Cost Calculation (OWNER ONLY) */}
+              {isOwner ? (
+                <div className="pt-2 border-t border-white/10 space-y-1.5">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Base Print Rate:</span>
+                    <span className="font-semibold text-white">₹{liveCalc.unitCost} / click</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Base Cost:</span>
+                    <span className="font-semibold text-white">₹{liveCalc.totalCost}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>GST (18%):</span>
+                    <span className="font-semibold text-white">₹{liveCalc.gstAmount}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-yellow-400 font-extrabold text-sm pt-2 border-t border-white/10">
+                    <span>Grand Total Cost:</span>
+                    <span>₹{liveCalc.grandTotalCost}</span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-slate-400">
-                  <span>Base Cost:</span>
-                  <span className="font-semibold text-white">₹{liveCalc.totalCost}</span>
+              ) : (
+                <div className="p-3 bg-white/5 rounded-xl border border-white/5 text-[11px] text-slate-400 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Good Prints:</span>
+                    <strong className="text-white">{g} sheets</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Wastage + Reprints:</span>
+                    <strong className="text-slate-300">{w + rep} sheets</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Press Assignment:</span>
+                    <strong className="text-yellow-400">Konica C3070</strong>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-slate-400">
-                  <span>GST (18%):</span>
-                  <span className="font-semibold text-white">₹{liveCalc.gstAmount}</span>
-                </div>
-                <div className="flex items-center justify-between text-emerald-400 font-extrabold text-sm pt-2 border-t border-white/10">
-                  <span>Grand Total Cost:</span>
-                  <span>₹{liveCalc.grandTotalCost}</span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Submit Button */}
             <button
               type="submit"
               disabled={submitting || !isStockAvailable}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center space-x-2 transition disabled:opacity-50"
+              className="w-full py-3.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-yellow-400/25 flex items-center justify-center space-x-2 transition transform active:scale-[0.99] disabled:opacity-50"
             >
-              <FileCheck className="w-4 h-4" />
+              <FileCheck className="w-4 h-4 text-slate-950 stroke-[2.5]" />
               <span>{submitting ? 'Saving Production...' : 'Save Production Job'}</span>
             </button>
           </div>

@@ -159,7 +159,7 @@ export default function InventoryPage() {
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center space-x-2">
-            <Boxes className="w-5 h-5 text-emerald-600" />
+            <Boxes className="w-5 h-5 text-yellow-600" />
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
               Media & Paper Inventory
             </h1>
@@ -191,12 +191,12 @@ export default function InventoryPage() {
         <div
           className={`p-4 rounded-2xl border text-xs font-bold flex items-center space-x-2 shadow-xs ${
             statusMsg.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              ? 'bg-yellow-50 border-yellow-300 text-emerald-900'
               : 'bg-red-50 border-red-200 text-red-700'
           }`}
         >
           {statusMsg.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <CheckCircle2 className="w-4 h-4 text-yellow-600" />
           ) : (
             <AlertCircle className="w-4 h-4 text-red-600" />
           )}
@@ -223,7 +223,7 @@ export default function InventoryPage() {
               placeholder="Filter by material, GSM, size..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 w-64"
+              className="pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-yellow-400 focus:border-yellow-400 w-64"
             />
           </div>
         </div>
@@ -265,7 +265,7 @@ export default function InventoryPage() {
                       <td className="py-3 px-4">
                         <span
                           className={`font-black text-sm ${
-                            isLow ? 'text-red-600' : 'text-emerald-700'
+                            isLow ? 'text-red-600' : 'text-yellow-800'
                           }`}
                         >
                           {m.currentStock.toLocaleString()} {m.unit}
@@ -281,7 +281,7 @@ export default function InventoryPage() {
                             <span>LOW STOCK</span>
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 flex items-center space-x-1 w-max">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-yellow-100 text-slate-950 flex items-center space-x-1 w-max">
                             <CheckCircle2 className="w-3 h-3" />
                             <span>ADEQUATE</span>
                           </span>
@@ -295,7 +295,7 @@ export default function InventoryPage() {
                             setRestockReason('');
                             setRestockModalOpen(true);
                           }}
-                          className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 transition"
+                          className="px-2.5 py-1 bg-yellow-50 hover:bg-yellow-100 text-yellow-800 text-xs font-bold rounded-lg border border-yellow-300 transition"
                         >
                           + Restock
                         </button>
@@ -361,8 +361,8 @@ export default function InventoryPage() {
                     <td className="py-3 px-4 font-bold text-slate-900">{mov.mediaName}</td>
                     <td className="py-3 px-4">
                       {mov.movementType === 'STOCK_IN' && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center space-x-1 w-max">
-                          <ArrowUpRight className="w-3 h-3 text-emerald-600" />
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-slate-950 flex items-center space-x-1 w-max">
+                          <ArrowUpRight className="w-3 h-3 text-yellow-600" />
                           <span>STOCK IN</span>
                         </span>
                       )}
@@ -383,7 +383,7 @@ export default function InventoryPage() {
                       <span
                         className={
                           mov.quantity > 0
-                            ? 'text-emerald-700'
+                            ? 'text-yellow-800'
                             : mov.quantity < 0
                             ? 'text-red-600'
                             : 'text-slate-600'
@@ -412,7 +412,7 @@ export default function InventoryPage() {
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center space-x-2">
-                <PlusCircle className="w-5 h-5 text-emerald-600" />
+                <PlusCircle className="w-5 h-5 text-yellow-600" />
                 <h3 className="text-sm font-bold text-slate-900">Restock Media Sheets</h3>
               </div>
               <button
@@ -426,7 +426,7 @@ export default function InventoryPage() {
             <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
               <div className="font-bold text-slate-800">{selectedMedia.gsm} GSM {selectedMedia.name}</div>
               <div className="text-slate-500">Size: {selectedMedia.size} | Brand: {selectedMedia.brand || 'Generic'}</div>
-              <div className="text-emerald-700 font-bold mt-1">Current Stock: {selectedMedia.currentStock} sheets</div>
+              <div className="text-yellow-800 font-bold mt-1">Current Stock: {selectedMedia.currentStock} sheets</div>
             </div>
 
             <form onSubmit={handleRestockSubmit} className="space-y-4">
@@ -441,7 +441,7 @@ export default function InventoryPage() {
                   value={restockQty}
                   onChange={(e) => setRestockQty(e.target.value ? Number(e.target.value) : '')}
                   placeholder="e.g. 500"
-                  className="w-full px-3 py-2 text-sm font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  className="w-full px-3 py-2 text-sm font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
                 />
               </div>
 
@@ -454,7 +454,7 @@ export default function InventoryPage() {
                   value={restockReason}
                   onChange={(e) => setRestockReason(e.target.value)}
                   placeholder="e.g. Purchase Invoice #1024"
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
                 />
               </div>
 

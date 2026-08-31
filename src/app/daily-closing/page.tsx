@@ -138,11 +138,11 @@ export default function DailyClosingPage() {
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center space-x-2">
-            <Gauge className="w-5 h-5 text-emerald-600" />
+            <Gauge className="w-5 h-5 text-yellow-600" />
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
               Machine Counter & Day Closure
             </h1>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-yellow-100 text-slate-950 border border-yellow-300">
               Konica Minolta C3070
             </span>
           </div>
@@ -162,8 +162,8 @@ export default function DailyClosingPage() {
 
       {/* Success Notification */}
       {successMsg && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-start space-x-3 text-emerald-900 text-xs shadow-xs">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
+        <div className="bg-yellow-50 border border-yellow-300 rounded-2xl p-4 flex items-start space-x-3 text-emerald-900 text-xs shadow-xs">
+          <CheckCircle2 className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
           <div className="flex-1 font-bold">{successMsg}</div>
         </div>
       )}
@@ -190,7 +190,7 @@ export default function DailyClosingPage() {
               </h2>
             </div>
             {isClosed ? (
-              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full text-xs font-bold flex items-center space-x-1">
+              <span className="px-3 py-1 bg-yellow-100 text-slate-950 border border-yellow-300 rounded-full text-xs font-bold flex items-center space-x-1">
                 <Lock className="w-3.5 h-3.5" />
                 <span>DAY CLOSED</span>
               </span>
@@ -224,19 +224,19 @@ export default function DailyClosingPage() {
               </div>
 
               {/* Job Clicks Total */}
-              <div className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-xl">
-                <div className="flex items-center justify-between text-emerald-800 mb-1">
+              <div className="p-4 bg-yellow-50/50 border border-yellow-300 rounded-xl">
+                <div className="flex items-center justify-between text-slate-950 mb-1">
                   <span className="text-xs font-bold uppercase tracking-wider">
                     Total Job Clicks Recorded
                   </span>
-                  <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.2 rounded font-semibold">
+                  <span className="text-[10px] bg-emerald-200 text-slate-950 px-1.5 py-0.2 rounded font-semibold">
                     Live System Clicks
                   </span>
                 </div>
-                <div className="text-2xl font-black text-emerald-800">
+                <div className="text-2xl font-black text-slate-950">
                   {jobClicks.toLocaleString()}
                 </div>
-                <div className="text-[11px] text-emerald-700 mt-1">
+                <div className="text-[11px] text-yellow-800 mt-1">
                   Sum of all job clicks logged today
                 </div>
               </div>
@@ -256,7 +256,7 @@ export default function DailyClosingPage() {
                   value={closingInput}
                   onChange={(e) => setClosingInput(e.target.value ? Number(e.target.value) : '')}
                   placeholder={`e.g. ${(opening + jobClicks).toString()}`}
-                  className="w-full px-4 py-3 text-lg font-black text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+                  className="w-full px-4 py-3 text-lg font-black text-slate-900 bg-slate-50 border-2 border-slate-200 rounded-xl focus:bg-white focus:border-yellow-400 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
                 />
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
@@ -269,14 +269,14 @@ export default function DailyClosingPage() {
               <div
                 className={`p-4 rounded-xl border ${
                   liveRecon.isMatched
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    ? 'bg-yellow-50 border-yellow-300 text-emerald-900'
                     : 'bg-amber-50 border-amber-200 text-amber-900'
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     {liveRecon.isMatched ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                      <CheckCircle2 className="w-5 h-5 text-yellow-600" />
                     ) : (
                       <AlertTriangle className="w-5 h-5 text-amber-600" />
                     )}
@@ -288,7 +288,7 @@ export default function DailyClosingPage() {
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
                       liveRecon.isMatched
-                        ? 'bg-emerald-600 text-white'
+                        ? 'bg-yellow-400 text-slate-950 font-black'
                         : 'bg-amber-600 text-white'
                     }`}
                   >
@@ -307,7 +307,7 @@ export default function DailyClosingPage() {
                   </div>
                   <div>
                     <span className="text-slate-500 block">Discrepancy:</span>
-                    <strong className={liveRecon.difference !== 0 ? 'text-amber-700 font-bold' : 'text-emerald-700 font-bold'}>
+                    <strong className={liveRecon.difference !== 0 ? 'text-amber-700 font-bold' : 'text-yellow-800 font-bold'}>
                       {liveRecon.difference === 0 ? 'None (0)' : `${liveRecon.difference} clicks`}
                     </strong>
                   </div>
@@ -417,13 +417,13 @@ export default function DailyClosingPage() {
                     <td className="py-3 px-4 font-bold text-slate-800">
                       {h.machinePrintCount !== undefined ? h.machinePrintCount.toLocaleString() : '-'}
                     </td>
-                    <td className="py-3 px-4 text-emerald-700 font-bold">
+                    <td className="py-3 px-4 text-yellow-800 font-bold">
                       {h.totalJobClicks?.toLocaleString()}
                     </td>
                     <td className="py-3 px-4">
                       {h.isClosed ? (
                         h.isMatched ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-slate-950">
                             MATCHED
                           </span>
                         ) : (

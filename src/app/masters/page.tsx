@@ -210,12 +210,12 @@ export default function MastersPage() {
         <div
           className={`p-4 rounded-2xl border text-xs font-bold flex items-center space-x-2 shadow-xs ${
             statusMsg.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              ? 'bg-yellow-50 border-yellow-300 text-emerald-900'
               : 'bg-red-50 border-red-200 text-red-700'
           }`}
         >
           {statusMsg.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <CheckCircle2 className="w-4 h-4 text-yellow-600" />
           ) : (
             <AlertCircle className="w-4 h-4 text-red-600" />
           )}
@@ -323,7 +323,7 @@ export default function MastersPage() {
                           <span>{r.gstPercent}%</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 font-bold text-emerald-700">
+                      <td className="py-3.5 px-4 font-bold text-yellow-800">
                         ₹{effective.toFixed(2)}
                       </td>
                       <td className="py-3.5 px-4 text-right">
@@ -331,7 +331,7 @@ export default function MastersPage() {
                           <div className="flex items-center justify-end space-x-1.5">
                             <button
                               onClick={() => handleUpdateRate(r.id)}
-                              className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition"
+                              className="p-1.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black shadow-md shadow-yellow-400/20 rounded-lg transition"
                               title="Save Rate"
                             >
                               <Save className="w-3.5 h-3.5" />
@@ -372,7 +372,7 @@ export default function MastersPage() {
           {/* Add New Media Form */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5">
-              <PlusCircle className="w-4 h-4 text-emerald-600" />
+              <PlusCircle className="w-4 h-4 text-yellow-600" />
               <span>Add New Media / Substrate to Master</span>
             </h3>
 
@@ -482,7 +482,7 @@ export default function MastersPage() {
                       <td className="py-2.5 px-4 text-slate-500">{m.brand || 'Generic'}</td>
                       <td className="py-2.5 px-4 font-bold text-slate-800">{m.currentStock} sheets</td>
                       <td className="py-2.5 px-4">
-                        <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                        <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-yellow-100 text-slate-950">
                           ACTIVE
                         </span>
                       </td>
@@ -515,10 +515,10 @@ export default function MastersPage() {
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <Printer className="w-5 h-5 text-emerald-600" />
+                    <Printer className="w-5 h-5 text-yellow-600" />
                     <h3 className="font-extrabold text-sm text-slate-900">{mach.name}</h3>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-slate-950">
                     ACTIVE PRODUCTION
                   </span>
                 </div>
@@ -538,7 +538,7 @@ export default function MastersPage() {
                   </div>
                   <div>
                     <span className="text-slate-400 block">Current Counter:</span>
-                    <strong className="text-emerald-700 font-black">{mach.currentCounter.toLocaleString()}</strong>
+                    <strong className="text-yellow-800 font-black">{mach.currentCounter.toLocaleString()}</strong>
                   </div>
                 </div>
               </div>
@@ -587,7 +587,7 @@ export default function MastersPage() {
                   className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 flex items-center justify-between"
                 >
                   <span>{wr.reason}</span>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-yellow-600 flex-shrink-0" />
                 </div>
               ))}
             </div>
