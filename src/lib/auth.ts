@@ -2,7 +2,13 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { NextRequest } from 'next/server';
-import { UserEntity } from './db';
+
+export interface UserEntity {
+  id: string;
+  email: string;
+  name: string;
+  role: 'OWNER' | 'OPERATOR';
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pb_digital_print_production_secret_key_2026_c3070';
 const JWT_EXPIRES_IN = '7d';
@@ -44,7 +50,6 @@ export async function comparePassword(password: string, hash: string): Promise<b
 }
 
 export function getSessionFromRequest(request: NextRequest): AuthPayload | null {
-  // 1. Check Authorization header
   const authHeader = request.headers.get('authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
@@ -52,7 +57,6 @@ export function getSessionFromRequest(request: NextRequest): AuthPayload | null 
     if (decoded) return decoded;
   }
 
-  // 2. Check cookie
   const cookieToken = request.cookies.get('pb_token')?.value;
   if (cookieToken) {
     const decoded = verifyToken(cookieToken);
