@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { requireOwner } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
-  const { user, error } = requireOwner(request);
-  if (error || !user) return NextResponse.json({ error: error || 'Forbidden: Owner only' }, { status: 403 });
+  const { user, error } = requireAuth(request);
+  if (error || !user) return NextResponse.json({ error: error || 'Unauthorized' }, { status: 401 });
 
   try {
     const body = await request.json();
@@ -17,18 +17,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!reason || !reason.trim()) {
-      return NextResponse.json(
-        { error: 'A valid reason is required for manual stock adjustments.' },
-        { status: 400 }
-      );
-    }
+    const adjustmentReason = reason && reason.trim() ? reason.trim() : 'Physical count reconciliation / initial stock setup';
 
     const result = await db.inventory.adjust(
       mediaId,
       Number(newStock),
       user.id,
-      reason.trim()
+      adjustmentReason
     );
 
     return NextResponse.json({

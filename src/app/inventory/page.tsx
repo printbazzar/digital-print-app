@@ -21,10 +21,13 @@ import {
   PackagePlus,
   Scale,
   X,
+  Save,
+  Check,
+  ListOrdered,
 } from 'lucide-react';
 
 export default function InventoryPage() {
-  const { user, isOwner, loading: authLoading } = useAuth();
+  const { user, token, isOwner, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const [mediaList, setMediaList] = useState<any[]>([]);
@@ -35,9 +38,14 @@ export default function InventoryPage() {
   // Modals state
   const [restockModalOpen, setRestockModalOpen] = useState(false);
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
+  const [bulkAuditModalOpen, setBulkAuditModalOpen] = useState(false);
   const [addMediaModalOpen, setAddMediaModalOpen] = useState(false);
   const [editMediaModalOpen, setEditMediaModalOpen] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState<any | null>(null);
+
+  // Bulk audit state: Map of mediaId -> number
+  const [bulkStocks, setBulkStocks] = useState<{ [key: string]: number }>({});
+  const [bulkReason, setBulkReason] = useState('Bulk Physical Stock Count Audit');
 
   // Form states
   // 1. Restock
@@ -46,7 +54,7 @@ export default function InventoryPage() {
 
   // 2. Adjust Stock
   const [adjustTargetStock, setAdjustTargetStock] = useState<number | ''>('');
-  const [adjustReason, setAdjustReason] = useState('Physical audit reconciliation / stock correction');
+  const [adjustReason, setAdjustReason] = useState('Physical audit count reconciliation / initial stock setup');
 
   // 3. Add Media
   const [newMediaName, setNewMediaName] = useState('');
@@ -66,17 +74,35 @@ export default function InventoryPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Helper to build auth headers
+  const getAuthHeaders = () => {
+    const activeToken = token || (typeof window !== 'undefined' ? localStorage.getItem('pb_token') : null);
+    return {
+      'Content-Type': 'application/json',
+      ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+    };
+  };
+
   const fetchInventoryData = async () => {
     setLoading(true);
     try {
+      const headers = getAuthHeaders();
       const [medRes, movRes] = await Promise.all([
-        fetch('/api/media'),
-        fetch('/api/inventory/movements'),
+        fetch('/api/media', { headers }),
+        fetch('/api/inventory/movements', { headers }),
       ]);
 
       if (medRes.ok) {
         const d = await medRes.json();
-        setMediaList(d.media || []);
+        const list = d.media || [];
+        setMediaList(list);
+
+        // Prepopulate bulk stock counts
+        const stockMap: { [key: string]: number } = {};
+        list.forEach((m: any) => {
+          stockMap[m.id] = m.currentStock;
+        });
+        setBulkStocks(stockMap);
       }
       if (movRes.ok) {
         const m = await movRes.json();
@@ -95,19 +121,22 @@ export default function InventoryPage() {
     } else if (user) {
       fetchInventoryData();
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, token]);
 
   // Handle Restock Submit
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedMedia || !restockQty || Number(restockQty) <= 0) return;
+    if (!selectedMedia || restockQty === '' || Number(restockQty) <= 0) {
+      setStatusMsg({ type: 'error', text: 'Please enter a valid positive restock quantity.' });
+      return;
+    }
 
     setActionLoading(true);
     setStatusMsg(null);
     try {
       const res = await fetch('/api/inventory/restock', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           mediaId: selectedMedia.id,
           quantity: Number(restockQty),
@@ -124,19 +153,17 @@ export default function InventoryPage() {
       setRestockReason('');
       fetchInventoryData();
     } catch (err: any) {
-      setStatusMsg({ type: 'error', text: err.message });
+      setStatusMsg({ type: 'error', text: err.message || 'Error occurred while restocking' });
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Handle Stock Adjustment Submit
+  // Handle Single Stock Adjustment Submit
   const handleAdjustSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedMedia || adjustTargetStock === '' || Number(adjustTargetStock) < 0) return;
-
-    if (!adjustReason.trim()) {
-      setStatusMsg({ type: 'error', text: 'Adjustment reason is required.' });
+    if (!selectedMedia || adjustTargetStock === '' || Number(adjustTargetStock) < 0) {
+      setStatusMsg({ type: 'error', text: 'Please enter a valid non-negative physical stock count.' });
       return;
     }
 
@@ -145,11 +172,11 @@ export default function InventoryPage() {
     try {
       const res = await fetch('/api/inventory/adjust', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           mediaId: selectedMedia.id,
           newStock: Number(adjustTargetStock),
-          reason: adjustReason.trim(),
+          reason: adjustReason.trim() || 'Physical stock audit adjustment',
         }),
       });
 
@@ -159,10 +186,67 @@ export default function InventoryPage() {
       setStatusMsg({ type: 'success', text: data.message });
       setAdjustModalOpen(false);
       setAdjustTargetStock('');
-      setAdjustReason('Physical audit reconciliation / stock correction');
       fetchInventoryData();
     } catch (err: any) {
-      setStatusMsg({ type: 'error', text: err.message });
+      setStatusMsg({ type: 'error', text: err.message || 'Error occurred during stock adjustment' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Handle Bulk Stock Audit Submit
+  const handleBulkAuditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    setStatusMsg(null);
+
+    let updatedCount = 0;
+    const errors: string[] = [];
+
+    try {
+      for (const m of mediaList) {
+        const targetVal = bulkStocks[m.id];
+        if (targetVal !== undefined && targetVal !== m.currentStock) {
+          const res = await fetch('/api/inventory/adjust', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+              mediaId: m.id,
+              newStock: Number(targetVal),
+              reason: bulkReason.trim() || 'Bulk Initial Stock Count Audit',
+            }),
+          });
+
+          if (res.ok) {
+            updatedCount++;
+          } else {
+            const d = await res.json();
+            errors.push(`${m.name}: ${d.error || 'Failed'}`);
+          }
+        }
+      }
+
+      if (errors.length > 0) {
+        setStatusMsg({
+          type: 'error',
+          text: `Updated ${updatedCount} items with ${errors.length} errors: ${errors.join(', ')}`,
+        });
+      } else if (updatedCount > 0) {
+        setStatusMsg({
+          type: 'success',
+          text: `Successfully adjusted and saved ${updatedCount} media stock counts into database!`,
+        });
+      } else {
+        setStatusMsg({
+          type: 'success',
+          text: 'No changes detected. All stock counts are already up-to-date.',
+        });
+      }
+
+      setBulkAuditModalOpen(false);
+      fetchInventoryData();
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Error occurred during bulk stock audit' });
     } finally {
       setActionLoading(false);
     }
@@ -171,14 +255,17 @@ export default function InventoryPage() {
   // Handle Add New Media Submit
   const handleAddMediaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMediaName.trim() || !newMediaGsm || !newMediaSize.trim()) return;
+    if (!newMediaName.trim() || !newMediaGsm || !newMediaSize.trim()) {
+      setStatusMsg({ type: 'error', text: 'Media Name, GSM, and Size are required.' });
+      return;
+    }
 
     setActionLoading(true);
     setStatusMsg(null);
     try {
       const res = await fetch('/api/media', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           name: newMediaName.trim(),
           gsm: Number(newMediaGsm),
@@ -202,7 +289,7 @@ export default function InventoryPage() {
       setNewMediaMinStock(100);
       fetchInventoryData();
     } catch (err: any) {
-      setStatusMsg({ type: 'error', text: err.message });
+      setStatusMsg({ type: 'error', text: err.message || 'Error creating media' });
     } finally {
       setActionLoading(false);
     }
@@ -211,14 +298,17 @@ export default function InventoryPage() {
   // Handle Edit Media Submit
   const handleEditMediaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedMedia || !editName.trim() || !editGsm || !editSize.trim()) return;
+    if (!selectedMedia || !editName.trim() || !editGsm || !editSize.trim()) {
+      setStatusMsg({ type: 'error', text: 'Name, GSM, and Size are required.' });
+      return;
+    }
 
     setActionLoading(true);
     setStatusMsg(null);
     try {
       const res = await fetch('/api/media', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           id: selectedMedia.id,
           name: editName.trim(),
@@ -236,7 +326,7 @@ export default function InventoryPage() {
       setEditMediaModalOpen(false);
       fetchInventoryData();
     } catch (err: any) {
-      setStatusMsg({ type: 'error', text: err.message });
+      setStatusMsg({ type: 'error', text: err.message || 'Error updating media' });
     } finally {
       setActionLoading(false);
     }
@@ -295,7 +385,24 @@ export default function InventoryPage() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Bulk Audit Tool */}
+          <button
+            onClick={() => {
+              const stockMap: { [key: string]: number } = {};
+              mediaList.forEach((m: any) => {
+                stockMap[m.id] = m.currentStock;
+              });
+              setBulkStocks(stockMap);
+              setBulkAuditModalOpen(true);
+            }}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl border border-slate-300 shadow-2xs transition"
+            title="Adjust all paper stocks at once in a quick-entry table"
+          >
+            <ListOrdered className="w-4 h-4 text-yellow-600" />
+            <span>Fast Bulk Stock Audit</span>
+          </button>
+
           {isOwner && (
             <button
               onClick={() => setAddMediaModalOpen(true)}
@@ -400,7 +507,7 @@ export default function InventoryPage() {
               Media Master Catalog ({filteredMedia.length})
             </h2>
             <p className="text-xs text-slate-500 font-medium">
-              Adjust stock counts, edit parameters, or record restock purchases
+              Click &quot;Adjust&quot; on any item to set real physical stock count, or &quot;Restock&quot; to add received sheets
             </p>
           </div>
 
@@ -488,10 +595,10 @@ export default function InventoryPage() {
                           {/* Quick Adjust Button */}
                           <button
                             onClick={() => openAdjustModal(m)}
-                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-yellow-400 hover:text-slate-950 text-slate-700 font-bold text-xs rounded-lg transition flex items-center space-x-1"
-                            title="Adjust Physical Stock Count"
+                            className="px-2.5 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-lg shadow-2xs transition flex items-center space-x-1"
+                            title="Adjust Real Stock Count"
                           >
-                            <Scale className="w-3.5 h-3.5" />
+                            <Scale className="w-3.5 h-3.5 stroke-[2.5]" />
                             <span>Adjust</span>
                           </button>
 
@@ -503,7 +610,7 @@ export default function InventoryPage() {
                               setRestockReason('');
                               setRestockModalOpen(true);
                             }}
-                            className="px-2.5 py-1.5 bg-yellow-400/20 hover:bg-yellow-400 text-slate-950 font-bold text-xs rounded-lg transition flex items-center space-x-1"
+                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-lg transition flex items-center space-x-1"
                             title="Add Restock Quantity"
                           >
                             <PlusCircle className="w-3.5 h-3.5" />
@@ -627,18 +734,18 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* MODAL 1: STOCK ADJUSTMENT MODAL */}
+      {/* MODAL 1: SINGLE STOCK ADJUSTMENT MODAL */}
       {adjustModalOpen && selectedMedia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="bg-slate-950 px-6 py-4 flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center space-x-2.5">
                 <div className="w-8 h-8 rounded-lg bg-yellow-400 text-slate-950 flex items-center justify-center font-bold">
-                  <Scale className="w-4 h-4" />
+                  <Scale className="w-4 h-4 stroke-[2.5]" />
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-white">Stock Count Adjustment</h3>
-                  <p className="text-[11px] text-yellow-400 font-medium">Correct physical inventory quantity</p>
+                  <p className="text-[11px] text-yellow-400 font-medium">Set real physical inventory count</p>
                 </div>
               </div>
               <button
@@ -650,20 +757,20 @@ export default function InventoryPage() {
             </div>
 
             <form onSubmit={handleAdjustSubmit} className="p-6 space-y-4">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-                <div className="font-bold text-slate-900">
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
+                <div className="font-black text-slate-900 text-sm">
                   {selectedMedia.gsm} GSM {selectedMedia.name} ({selectedMedia.size})
                 </div>
                 <div className="text-slate-500">Brand: {selectedMedia.brand || 'Generic'}</div>
-                <div className="text-xs font-extrabold text-slate-800 pt-1">
-                  Current Database Stock:{' '}
-                  <span className="text-yellow-800 font-black">{selectedMedia.currentStock} sheets</span>
+                <div className="text-xs font-bold text-slate-800 pt-1.5 flex items-center justify-between border-t border-slate-200">
+                  <span>Current Database Stock:</span>
+                  <span className="text-yellow-800 font-black text-sm">{selectedMedia.currentStock.toLocaleString()} sheets</span>
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1">
-                  New Physical Stock Count (Sheets) *
+                  Actual Physical Stock Count (Sheets) *
                 </label>
                 <input
                   type="number"
@@ -671,39 +778,56 @@ export default function InventoryPage() {
                   required
                   value={adjustTargetStock}
                   onChange={(e) => setAdjustTargetStock(e.target.value === '' ? '' : parseInt(e.target.value))}
-                  placeholder="e.g. 0 or 500"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  placeholder="e.g. 0 or 250 or 500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-base font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 />
                 {adjustTargetStock !== '' && (
-                  <div className="text-[11px] font-bold mt-1.5">
-                    {Number(adjustTargetStock) - selectedMedia.currentStock !== 0 ? (
-                      <span
-                        className={
-                          Number(adjustTargetStock) > selectedMedia.currentStock
-                            ? 'text-yellow-700'
-                            : 'text-red-600'
-                        }
-                      >
-                        Stock will change by {Number(adjustTargetStock) - selectedMedia.currentStock > 0 ? '+' : ''}
-                        {Number(adjustTargetStock) - selectedMedia.currentStock} sheets
-                      </span>
-                    ) : (
-                      <span className="text-slate-500">No change to stock count</span>
-                    )}
+                  <div className="text-[11px] font-bold mt-1.5 p-2 rounded-lg bg-slate-100 flex items-center justify-between">
+                    <span className="text-slate-600">Inventory Adjustment:</span>
+                    <span
+                      className={
+                        Number(adjustTargetStock) - selectedMedia.currentStock > 0
+                          ? 'text-yellow-700 font-black'
+                          : Number(adjustTargetStock) - selectedMedia.currentStock < 0
+                          ? 'text-red-600 font-black'
+                          : 'text-slate-500 font-semibold'
+                      }
+                    >
+                      {Number(adjustTargetStock) - selectedMedia.currentStock > 0 ? '+' : ''}
+                      {Number(adjustTargetStock) - selectedMedia.currentStock} sheets
+                    </span>
                   </div>
                 )}
               </div>
 
+              {/* Preset Reasons */}
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Adjustment Reason / Audit Note *
+                  Reason for Adjustment *
                 </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    'Initial real physical count load',
+                    'Physical stock audit count correction',
+                    'Damage / spoilage sheet write-off',
+                    'Found extra unrecorded stock',
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setAdjustReason(preset)}
+                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-yellow-100 text-[10px] font-semibold text-slate-700 hover:text-slate-950 transition border border-slate-200"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
                 <input
                   type="text"
                   required
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
-                  placeholder="e.g. Physical inventory count correction"
+                  placeholder="Enter specific adjustment explanation..."
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 />
               </div>
@@ -719,9 +843,10 @@ export default function InventoryPage() {
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="flex-1 py-2.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-yellow-400/20 transition disabled:opacity-50"
+                  className="flex-1 py-2.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-yellow-400/20 transition disabled:opacity-50 flex items-center justify-center space-x-1.5"
                 >
-                  {actionLoading ? 'Saving...' : 'Save Stock Adjustment'}
+                  <Save className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>{actionLoading ? 'Saving...' : 'Save Stock Adjustment'}</span>
                 </button>
               </div>
             </form>
@@ -729,7 +854,112 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* MODAL 2: RESTOCK MODAL */}
+      {/* MODAL 2: BULK STOCK AUDIT MODAL */}
+      {bulkAuditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white w-full max-w-3xl max-h-[90vh] rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="bg-slate-950 px-6 py-4 flex items-center justify-between border-b border-slate-800 flex-shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-yellow-400 text-slate-950 flex items-center justify-center font-bold">
+                  <ListOrdered className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">Fast Bulk Stock Audit & Load</h3>
+                  <p className="text-[11px] text-yellow-400 font-medium">Quickly update physical stock for all media items at once</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setBulkAuditModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleBulkAuditSubmit} className="p-6 overflow-y-auto flex-1 space-y-4">
+              <div className="flex items-center justify-between bg-yellow-50 p-3 rounded-xl border border-yellow-300 text-xs text-slate-950 font-semibold">
+                <span>💡 Type the exact physical sheet count in the &quot;New Physical Stock&quot; column for each paper.</span>
+                <span className="text-[11px] font-extrabold text-yellow-800">{mediaList.length} Items Listed</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  Audit Reason / Batch Reference
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={bulkReason}
+                  onChange={(e) => setBulkReason(e.target.value)}
+                  placeholder="e.g. Initial Stock Loading / September 2026 Physical Count"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                />
+              </div>
+
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs text-slate-600">
+                  <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3">Media Item</th>
+                      <th className="py-2.5 px-3">Size / GSM</th>
+                      <th className="py-2.5 px-3">Current Stock</th>
+                      <th className="py-2.5 px-3 w-40">New Physical Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {mediaList.map((m) => (
+                      <tr key={m.id} className="hover:bg-slate-50/80">
+                        <td className="py-2 px-3 font-bold text-slate-900">
+                          {m.name}
+                          <span className="text-[10px] text-slate-400 font-normal block">{m.brand || 'Generic'}</span>
+                        </td>
+                        <td className="py-2 px-3 font-semibold text-slate-700">
+                          {m.gsm} GSM • {m.size}
+                        </td>
+                        <td className="py-2 px-3 font-mono font-bold text-slate-700">
+                          {m.currentStock.toLocaleString()}
+                        </td>
+                        <td className="py-2 px-3">
+                          <input
+                            type="number"
+                            min="0"
+                            value={bulkStocks[m.id] !== undefined ? bulkStocks[m.id] : m.currentStock}
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? 0 : parseInt(e.target.value);
+                              setBulkStocks((prev) => ({ ...prev, [m.id]: val }));
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setBulkAuditModalOpen(false)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="px-6 py-2.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-yellow-400/20 transition disabled:opacity-50 flex items-center space-x-1.5"
+                >
+                  <Save className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>{actionLoading ? 'Saving All...' : 'Save All Stock Adjustments'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: RESTOCK MODAL */}
       {restockModalOpen && selectedMedia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
@@ -826,7 +1056,7 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* MODAL 3: ADD NEW MEDIA MODAL */}
+      {/* MODAL 4: ADD NEW MEDIA MODAL */}
       {addMediaModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
@@ -959,7 +1189,7 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* MODAL 4: EDIT MEDIA MODAL */}
+      {/* MODAL 5: EDIT MEDIA MODAL */}
       {editMediaModalOpen && selectedMedia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
@@ -1039,7 +1269,7 @@ export default function InventoryPage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Minimum Alert Level (Sheets)
+                  Minimum Safety Stock Level (Sheets)
                 </label>
                 <input
                   type="number"
