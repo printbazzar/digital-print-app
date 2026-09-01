@@ -130,8 +130,8 @@ export default function DashboardPage() {
       {/* Header Banner & Date Filter */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center space-x-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-white border border-yellow-400 p-1 flex items-center justify-center shadow-xs flex-shrink-0">
-            <img src="/logo-badge.png" alt="Print Bazzar" className="w-full h-full object-contain" />
+          <div className="w-12 h-12 rounded-full bg-slate-900 border-2 border-yellow-400 p-0.5 flex items-center justify-center shadow-md shadow-yellow-400/20 flex-shrink-0">
+            <img src="/logo-icon.png" alt="Print Bazzar" className="w-full h-full object-contain rounded-full" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
@@ -139,7 +139,7 @@ export default function DashboardPage() {
                 Production Dashboard
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-yellow-400 text-slate-950 border border-yellow-400">
-                Konica Minolta C3070 Press
+                Print Bazzar Live Hub
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5 font-medium">

@@ -50,22 +50,22 @@ export default function Navbar() {
       <header className="sticky top-0 z-30 bg-slate-950 text-white border-b border-slate-800 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            {/* Brand & Active Press */}
+            {/* Brand */}
             <div className="flex items-center space-x-6">
-              <Link href="/" className="flex items-center space-x-3 group">
-                <div className="h-10 w-10 rounded-xl bg-white p-0.5 flex items-center justify-center shadow-md shadow-yellow-400/20 group-hover:scale-105 transition transform overflow-hidden border border-yellow-400">
+              <Link href="/" className="flex items-center space-x-3 group py-1">
+                <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-full bg-slate-900 p-0.5 flex items-center justify-center shadow-lg shadow-yellow-400/20 group-hover:scale-105 transition transform overflow-hidden border-2 border-yellow-400 flex-shrink-0">
                   <img
-                    src="/logo-badge.png"
+                    src="/logo-icon.png"
                     alt="Print Bazzar Logo"
-                    className="h-full w-full object-contain"
+                    className="h-full w-full object-contain rounded-full"
                   />
                 </div>
                 <div>
-                  <span className="font-black text-base tracking-tight text-white block leading-tight flex items-center gap-1.5">
+                  <span className="font-black text-base sm:text-lg tracking-tight text-white block leading-tight flex items-center gap-1.5">
                     PRINT BAZZAR <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"></span>
                   </span>
-                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded border border-yellow-400/30 inline-block">
-                    Digital Production • C3070
+                  <span className="text-[11px] font-bold text-yellow-400 block leading-tight tracking-normal">
+                    More than you expect
                   </span>
                 </div>
               </Link>
