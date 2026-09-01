@@ -73,15 +73,101 @@ export const db = {
     },
     list: async () => {
       try {
-        const list = await prisma.user.findMany();
+        const list = await prisma.user.findMany({
+          include: {
+            _count: {
+              select: { jobs: true },
+            },
+          },
+          orderBy: [{ role: 'asc' }, { createdAt: 'desc' }],
+        });
         return list.map((u) => ({
-          ...u,
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          role: u.role,
+          isActive: u.isActive,
+          jobsCount: u._count.jobs,
           createdAt: u.createdAt.toISOString(),
           updatedAt: u.updatedAt.toISOString(),
         }));
       } catch {
         return [];
       }
+    },
+    create: async (data: { email: string; name: string; password: string; role?: 'OWNER' | 'OPERATOR' }) => {
+      const existing = await prisma.user.findUnique({
+        where: { email: data.email.toLowerCase().trim() },
+      });
+      if (existing) {
+        throw new Error(`A user with email '${data.email}' already exists.`);
+      }
+
+      const passwordHash = await bcrypt.hash(data.password, 10);
+      const user = await prisma.user.create({
+        data: {
+          email: data.email.toLowerCase().trim(),
+          name: data.name.trim(),
+          passwordHash,
+          role: data.role || 'OPERATOR',
+          isActive: true,
+        },
+      });
+
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        isActive: user.isActive,
+        createdAt: user.createdAt.toISOString(),
+        updatedAt: user.updatedAt.toISOString(),
+      };
+    },
+    update: async (id: string, updates: { name?: string; email?: string; role?: 'OWNER' | 'OPERATOR'; password?: string; isActive?: boolean }) => {
+      const dataToUpdate: any = {};
+      if (updates.name) dataToUpdate.name = updates.name.trim();
+      if (updates.email) dataToUpdate.email = updates.email.toLowerCase().trim();
+      if (updates.role) dataToUpdate.role = updates.role;
+      if (updates.isActive !== undefined) dataToUpdate.isActive = updates.isActive;
+      if (updates.password) {
+        dataToUpdate.passwordHash = await bcrypt.hash(updates.password, 10);
+      }
+
+      const updated = await prisma.user.update({
+        where: { id },
+        data: dataToUpdate,
+      });
+
+      return {
+        id: updated.id,
+        email: updated.email,
+        name: updated.name,
+        role: updated.role,
+        isActive: updated.isActive,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      };
+    },
+    delete: async (id: string) => {
+      const user = await prisma.user.findUnique({ where: { id } });
+      if (!user) throw new Error('User not found');
+      if (user.email === 'owner@printbazzar.com') {
+        throw new Error('Primary Owner account cannot be deleted.');
+      }
+
+      // If user has jobs, deactivate instead of hard delete to preserve foreign keys
+      const jobsCount = await prisma.jobProduction.count({ where: { operatorId: id } });
+      if (jobsCount > 0) {
+        const updated = await prisma.user.update({
+          where: { id },
+          data: { isActive: false },
+        });
+        return { success: true, message: `User '${user.name}' deactivated to preserve past job audit history.`, user: updated };
+      }
+
+      await prisma.user.delete({ where: { id } });
+      return { success: true, message: `User '${user.name}' deleted successfully.` };
     },
   },
 

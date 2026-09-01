@@ -18,6 +18,7 @@ import {
   Menu,
   X,
   User,
+  Users,
   KeyRound,
 } from 'lucide-react';
 
@@ -37,6 +38,7 @@ export default function Navbar() {
     { href: '/reports', label: 'Reports', icon: FileSpreadsheet },
     ...(isOwner
       ? [
+          { href: '/staff', label: 'Staff / Operators', icon: Users },
           { href: '/masters', label: 'Masters', icon: Settings },
           { href: '/audit', label: 'Audit Logs', icon: ShieldCheck },
         ]
