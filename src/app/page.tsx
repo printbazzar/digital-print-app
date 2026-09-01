@@ -129,18 +129,23 @@ export default function DashboardPage() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
       {/* Header Banner & Date Filter */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <div className="flex items-center space-x-2">
-            <h1 className="text-xl font-black text-slate-950 tracking-tight">
-              Production Dashboard
-            </h1>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-yellow-400 text-slate-950 border border-yellow-400">
-              Konica Minolta C3070 Press
-            </span>
+        <div className="flex items-center space-x-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-white border border-yellow-400 p-1 flex items-center justify-center shadow-xs flex-shrink-0">
+            <img src="/logo-badge.png" alt="Print Bazzar" className="w-full h-full object-contain" />
           </div>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            Real-time shop-floor printing metrics, stock status, and shift reconciliation
-          </p>
+          <div>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-xl font-black text-slate-950 tracking-tight">
+                Production Dashboard
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-yellow-400 text-slate-950 border border-yellow-400">
+                Konica Minolta C3070 Press
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              Real-time shop-floor printing metrics, stock status, and shift reconciliation
+            </p>
+          </div>
         </div>
 
         {/* Date Filter Tabs */}

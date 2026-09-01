@@ -58,19 +58,23 @@ export default function AuditLogsPage() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
       {/* Header */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center space-x-2">
-            <ShieldCheck className="w-5 h-5 text-purple-600" />
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-              Audit Logs & Security Trail
-            </h1>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200">
-              Immutable Log
-            </span>
+        <div className="flex items-center space-x-3.5">
+          <div className="w-11 h-11 rounded-xl bg-white border border-yellow-400 p-0.5 flex items-center justify-center shadow-xs flex-shrink-0">
+            <img src="/logo-badge.png" alt="Print Bazzar" className="w-full h-full object-contain" />
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Complete audit trail for day closures, rate edits, production jobs, and inventory overrides
-          </p>
+          <div>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-xl font-black text-slate-950 tracking-tight">
+                Audit Logs &amp; Security Trail
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-yellow-400 text-slate-950 border border-yellow-400">
+                Immutable Ledger
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              Complete audit trail for day closures, rate edits, production jobs, and inventory overrides
+            </p>
+          </div>
         </div>
 
         <button

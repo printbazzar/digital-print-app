@@ -33,18 +33,20 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-black p-4 sm:p-6">
       <div className="max-w-md w-full">
         {/* Brand Banner */}
-        <div className="text-center mb-8">
-          <div className="inline-flex h-16 w-16 rounded-2xl bg-yellow-400 items-center justify-center text-slate-950 font-black text-3xl shadow-2xl shadow-yellow-400/25 mb-4 transform hover:scale-105 transition">
-            PB
+        <div className="text-center mb-6">
+          <div className="inline-block bg-white p-3.5 rounded-2xl shadow-2xl shadow-yellow-400/20 mb-3 transform hover:scale-105 transition border-2 border-yellow-400">
+            <img
+              src="/logo.png"
+              alt="Print Bazzar - More than you expect"
+              className="h-14 w-auto object-contain mx-auto"
+            />
           </div>
-          <h1 className="text-2xl font-black tracking-tight text-white flex items-center justify-center gap-2">
-            PRINT BAZZAR <span className="w-2 h-2 rounded-full bg-yellow-400"></span>
-          </h1>
-          <p className="text-sm font-semibold text-yellow-400 mt-1">
-            Digital Printing Production System
+          <p className="text-xs font-extrabold uppercase tracking-wider text-yellow-400 mt-1">
+            Digital Printing Production Management System
           </p>
-          <div className="mt-3 inline-block px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs font-medium text-slate-300 shadow-inner">
-            Primary Press: <strong className="text-yellow-400">Konica Minolta C3070</strong>
+          <div className="mt-2.5 inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 shadow-inner">
+            <span>Primary Press:</span>
+            <strong className="text-yellow-400">Konica Minolta C3070</strong>
           </div>
         </div>
 

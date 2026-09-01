@@ -119,19 +119,23 @@ export default function ReportsPage() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
       {/* Header Banner */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2">
-            <FileSpreadsheet className="w-5 h-5 text-yellow-600" />
-            <h1 className="text-xl font-black text-slate-950 tracking-tight">
-              Production &amp; Operational Reports
-            </h1>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-yellow-400 text-slate-950 border border-yellow-400">
-              Audit Intelligence
-            </span>
+        <div className="flex items-center space-x-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-white border border-yellow-400 p-1 flex items-center justify-center shadow-xs flex-shrink-0">
+            <img src="/logo-badge.png" alt="Print Bazzar" className="w-full h-full object-contain" />
           </div>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            Detailed shift summaries, operator efficiency, media consumption, and wastage analysis
-          </p>
+          <div>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-xl font-black text-slate-950 tracking-tight">
+                Production &amp; Operational Reports
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-yellow-400 text-slate-950 border border-yellow-400">
+                Audit Intelligence
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              Detailed shift summaries, operator efficiency, media consumption, and wastage analysis
+            </p>
+          </div>
         </div>
 
         {/* Export Buttons */}

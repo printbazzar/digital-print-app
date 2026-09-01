@@ -53,14 +53,18 @@ export default function Navbar() {
             {/* Brand & Active Press */}
             <div className="flex items-center space-x-6">
               <Link href="/" className="flex items-center space-x-3 group">
-                <div className="h-9 w-9 rounded-lg bg-yellow-400 flex items-center justify-center text-slate-950 font-black text-lg shadow-md shadow-yellow-400/20 group-hover:scale-105 transition transform">
-                  PB
+                <div className="h-10 w-10 rounded-xl bg-white p-0.5 flex items-center justify-center shadow-md shadow-yellow-400/20 group-hover:scale-105 transition transform overflow-hidden border border-yellow-400">
+                  <img
+                    src="/logo-badge.png"
+                    alt="Print Bazzar Logo"
+                    className="h-full w-full object-contain"
+                  />
                 </div>
                 <div>
-                  <span className="font-extrabold text-base tracking-tight text-white block leading-tight flex items-center gap-1.5">
+                  <span className="font-black text-base tracking-tight text-white block leading-tight flex items-center gap-1.5">
                     PRINT BAZZAR <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"></span>
                   </span>
-                  <span className="text-[10px] uppercase tracking-wider font-bold text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded border border-yellow-400/30 inline-block">
+                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded border border-yellow-400/30 inline-block">
                     Digital Production • C3070
                   </span>
                 </div>
