@@ -16,11 +16,16 @@ import {
   DollarSign,
   FileCheck,
   ShieldCheck,
+  Trash2,
+  X,
+  AlertTriangle,
+  History,
+  Check,
 } from 'lucide-react';
 import { calculateJobProduction, PrintSide, PaperSize, PrintType } from '@/lib/calculations';
 
 export default function ProductionEntryPage() {
-  const { user, loading: authLoading, isOwner } = useAuth();
+  const { user, token, loading: authLoading, isOwner } = useAuth();
   const router = useRouter();
 
   // Master lists
@@ -28,6 +33,8 @@ export default function ProductionEntryPage() {
   const [mediaList, setMediaList] = useState<any[]>([]);
   const [wastageReasons, setWastageReasons] = useState<any[]>([]);
   const [rates, setRates] = useState<any[]>([]);
+  const [todayJobs, setTodayJobs] = useState<any[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(false);
 
   // Form State
   const [jobNumber, setJobNumber] = useState('');
@@ -54,21 +61,50 @@ export default function ProductionEntryPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successResult, setSuccessResult] = useState<any | null>(null);
 
+  // Delete Job Modal
+  const [deleteModalJob, setDeleteModalJob] = useState<any | null>(null);
+  const [deletingJob, setDeletingJob] = useState(false);
+
+  const getAuthHeaders = () => {
+    const activeToken = token || (typeof window !== 'undefined' ? localStorage.getItem('pb_token') : null);
+    return {
+      'Content-Type': 'application/json',
+      ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+    };
+  };
+
+  const fetchTodayJobs = async () => {
+    setLoadingJobs(true);
+    try {
+      const res = await fetch('/api/jobs', { headers: getAuthHeaders() });
+      if (res.ok) {
+        const d = await res.json();
+        setTodayJobs(d.jobs || []);
+      }
+    } catch (err) {
+      console.error('Failed to load jobs:', err);
+    } finally {
+      setLoadingJobs(false);
+    }
+  };
+
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login');
     }
   }, [user, authLoading]);
 
-  // Load masters
+  // Load masters & today's jobs
   useEffect(() => {
     const loadMasters = async () => {
       try {
-        const [machRes, medRes, wrRes, ratesRes] = await Promise.all([
-          fetch('/api/machines'),
-          fetch('/api/media'),
-          fetch('/api/wastage-reasons'),
-          fetch('/api/rates'),
+        const headers = getAuthHeaders();
+        const [machRes, medRes, wrRes, ratesRes, jobsRes] = await Promise.all([
+          fetch('/api/machines', { headers }),
+          fetch('/api/media', { headers }),
+          fetch('/api/wastage-reasons', { headers }),
+          fetch('/api/rates', { headers }),
+          fetch('/api/jobs', { headers }),
         ]);
 
         if (machRes.ok) {
@@ -88,6 +124,10 @@ export default function ProductionEntryPage() {
         if (ratesRes.ok) {
           const d = await ratesRes.json();
           setRates(d.rates || []);
+        }
+        if (jobsRes.ok) {
+          const d = await jobsRes.json();
+          setTodayJobs(d.jobs || []);
         }
       } catch (err) {
         console.error('Failed to load masters:', err);
@@ -193,8 +233,8 @@ export default function ProductionEntryPage() {
     try {
       const payload = {
         jobNumber,
-        customerName,
-        product,
+        customerName: customerName.trim(),
+        product: product.trim(),
         orderedQuantity: typeof orderedQuantity === 'number' ? orderedQuantity : g,
         printType,
         paperSize,
@@ -208,12 +248,12 @@ export default function ProductionEntryPage() {
         wastageReasonId: w > 0 ? wastageReasonId : undefined,
         wastageReasonOther: w > 0 && wastageReasonId === 'wr-10' ? wastageReasonOther : undefined,
         wastagePhotoUrl: wastagePhotoUrl || undefined,
-        remarks: remarks || undefined,
+        remarks: remarks.trim() || undefined,
       };
 
       const res = await fetch('/api/jobs', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
 
@@ -223,13 +263,19 @@ export default function ProductionEntryPage() {
       }
 
       setSuccessResult(data.job);
+      // Immediately deduct local media stock
       setMediaList((prev) =>
         prev.map((m) =>
           m.id === selectedMediaId
-            ? { ...m, currentStock: m.currentStock - liveCalc.sheetConsumption }
+            ? { ...m, currentStock: Math.max(0, m.currentStock - liveCalc.sheetConsumption) }
             : m
         )
       );
+
+      // Prepend to today's jobs table immediately
+      if (data.job) {
+        setTodayJobs((prev) => [data.job, ...prev]);
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'Error occurred');
     } finally {
@@ -253,6 +299,41 @@ export default function ProductionEntryPage() {
     setJobNumber(`PB-${new Date().getFullYear()}-${rand}`);
   };
 
+  // Handle Delete Job
+  const handleDeleteJobConfirm = async () => {
+    if (!deleteModalJob) return;
+    setDeletingJob(true);
+    try {
+      const res = await fetch(`/api/jobs/${deleteModalJob.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete job');
+
+      // Remove from today's list
+      setTodayJobs((prev) => prev.filter((j) => j.id !== deleteModalJob.id));
+
+      // Restore stock in local state
+      if (data.restoredSheets) {
+        setMediaList((prev) =>
+          prev.map((m) =>
+            m.id === deleteModalJob.mediaId
+              ? { ...m, currentStock: m.currentStock + deleteModalJob.sheetConsumption }
+              : m
+          )
+        );
+      }
+
+      setDeleteModalJob(null);
+    } catch (err: any) {
+      alert('Delete failed: ' + err.message);
+    } finally {
+      setDeletingJob(false);
+    }
+  };
+
   if (authLoading) return null;
 
   return (
@@ -265,12 +346,12 @@ export default function ProductionEntryPage() {
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
               Production Entry
             </h1>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-yellow-100 text-slate-950 border border-yellow-300">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-yellow-400 text-slate-950 border border-yellow-400">
               Konica Minolta C3070
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Fast, touch-optimized job production entry with instant sheet deduction & click calculation
+            Fast, touch-optimized job production entry with instant sheet deduction &amp; click calculation
           </p>
         </div>
 
@@ -278,10 +359,10 @@ export default function ProductionEntryPage() {
           <button
             type="button"
             onClick={handleResetForNext}
-            className="flex items-center space-x-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+            className="flex items-center space-x-1 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            <span>Reset Form</span>
+            <span>New Job / Reset</span>
           </button>
         </div>
       </div>
@@ -298,44 +379,37 @@ export default function ProductionEntryPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 bg-white p-3.5 rounded-xl border border-yellow-300 text-xs">
                 <div>
                   <span className="text-slate-500 font-medium block">Job Number:</span>
-                  <strong className="text-slate-900 font-extrabold text-sm">{successResult.jobNumber}</strong>
+                  <span className="font-extrabold text-slate-900 text-sm">{successResult.jobNumber}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 font-medium block">Machine Clicks:</span>
-                  <strong className="text-yellow-700 font-extrabold text-sm">{successResult.machineClicks} clicks</strong>
+                  <span className="text-slate-500 font-medium block">Customer:</span>
+                  <span className="font-bold text-slate-900">{successResult.customerName}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 font-medium block">Sheets Consumed:</span>
-                  <strong className="text-slate-900 font-extrabold text-sm">{successResult.sheetConsumption} sheets</strong>
+                  <span className="font-extrabold text-slate-900 text-sm">{successResult.sheetConsumption} sheets</span>
                 </div>
-                {isOwner ? (
-                  <div>
-                    <span className="text-slate-500 font-medium block">Total Cost:</span>
-                    <strong className="text-purple-900 font-extrabold text-sm">₹{successResult.grandTotalCost}</strong>
-                  </div>
-                ) : (
-                  <div>
-                    <span className="text-slate-500 font-medium block">Operator:</span>
-                    <strong className="text-slate-800 font-extrabold text-sm">{successResult.operatorName}</strong>
-                  </div>
-                )}
+                <div>
+                  <span className="text-slate-500 font-medium block">Clicks Generated:</span>
+                  <span className="font-extrabold text-yellow-800 text-sm">{successResult.machineClicks} clicks</span>
+                </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={handleResetForNext}
-                  className="px-4 py-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-md transition flex items-center space-x-1.5"
+                  className="px-4 py-2 bg-slate-950 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center space-x-1.5"
                 >
+                  <RefreshCw className="w-3.5 h-3.5 text-yellow-400" />
                   <span>Enter Next Job</span>
-                  <ArrowRight className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => router.push('/')}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 transition"
+                  className="px-4 py-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 text-xs font-black rounded-xl transition"
                 >
-                  Return to Dashboard
+                  Go to Dashboard
                 </button>
               </div>
             </div>
@@ -345,23 +419,31 @@ export default function ProductionEntryPage() {
 
       {/* Error Message */}
       {errorMsg && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start space-x-3 text-red-700 text-xs shadow-xs">
-          <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
-          <div className="flex-1 font-semibold">{errorMsg}</div>
+        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start space-x-3 text-xs text-red-700 shadow-xs animate-fade-in">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600" />
+          <div className="font-bold flex-1">{errorMsg}</div>
+          <button onClick={() => setErrorMsg(null)} className="text-red-400 hover:text-red-700">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
-      {/* Production Entry Form */}
+      {/* Production Form */}
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Columns: Form Fields */}
-        <div className="lg:col-span-2 space-y-5 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
-          {/* Section 1: Job Header */}
-          <div className="space-y-4">
-            <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center space-x-1.5">
-              <span>1. Job & Customer Specification</span>
-            </h3>
+        {/* Left 2 Columns: Input Controls */}
+        <div className="lg:col-span-2 space-y-5">
+          {/* 1. Job Identification */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex items-center space-x-2 border-b border-slate-100 pb-3">
+              <span className="w-6 h-6 rounded-full bg-yellow-400 text-slate-950 flex items-center justify-center font-bold text-xs">
+                1
+              </span>
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                Job &amp; Customer Details
+              </h2>
+            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Job Number *
@@ -371,95 +453,82 @@ export default function ProductionEntryPage() {
                   required
                   value={jobNumber}
                   onChange={(e) => setJobNumber(e.target.value)}
-                  placeholder="PB-2026-0001"
-                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
+                  placeholder="PB-2026-XXXX or Invoice #"
+                  className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Customer Name *
+                  Customer / Client Name *
                 </label>
                 <input
                   type="text"
                   required
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="e.g. Apex Marketing"
-                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
+                  placeholder="e.g. Reliance / Local Studio / John"
+                  className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Product *
+                  Product / Job Description *
                 </label>
                 <input
                   type="text"
                   required
                   value={product}
                   onChange={(e) => setProduct(e.target.value)}
-                  placeholder="e.g. Visiting Cards, Brochure"
-                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
+                  placeholder="e.g. Visiting Cards, Menu Card, Brochure"
+                  className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Ordered Quantity (Finished Pieces)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={orderedQuantity}
+                  onChange={(e) =>
+                    setOrderedQuantity(e.target.value === '' ? '' : parseInt(e.target.value))
+                  }
+                  placeholder="e.g. 100 or 500"
+                  className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
                 />
               </div>
             </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Ordered Quantity (Units / Sheets) *
-              </label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={orderedQuantity}
-                onChange={(e) => setOrderedQuantity(e.target.value === '' ? '' : parseInt(e.target.value))}
-                placeholder="e.g. 500"
-                className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
-              />
-            </div>
           </div>
 
-          {/* Section 2: Machine & Technical Specs */}
-          <div className="pt-4 border-t border-slate-100 space-y-4">
-            <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
-              2. Print Specifications & Media Selection
-            </h3>
+          {/* 2. Print Specifications */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex items-center space-x-2 border-b border-slate-100 pb-3">
+              <span className="w-6 h-6 rounded-full bg-yellow-400 text-slate-950 flex items-center justify-center font-bold text-xs">
+                2
+              </span>
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                Print Mode &amp; Paper Spec
+              </h2>
+            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Machine Selection */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Print Type */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Printing Machine *
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Print Colour Mode
                 </label>
-                <select
-                  required
-                  value={selectedMachineId}
-                  onChange={(e) => setSelectedMachineId(e.target.value)}
-                  className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:outline-none"
-                >
-                  {machines.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Print Type: COLOUR vs B&W */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Print Type *
-                </label>
-                <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setPrintType('COLOUR')}
-                    className={`py-1.5 text-xs font-bold rounded-lg transition ${
+                    className={`py-2 text-xs font-bold rounded-xl border transition ${
                       printType === 'COLOUR'
-                        ? 'bg-yellow-400 text-slate-950 font-black shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     Colour
@@ -467,30 +536,30 @@ export default function ProductionEntryPage() {
                   <button
                     type="button"
                     onClick={() => setPrintType('BW')}
-                    className={`py-1.5 text-xs font-bold rounded-lg transition ${
+                    className={`py-2 text-xs font-bold rounded-xl border transition ${
                       printType === 'BW'
-                        ? 'bg-slate-900 text-white font-black shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-slate-950 text-white border-slate-950 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    B&W
+                    B&amp;W
                   </button>
                 </div>
               </div>
 
-              {/* Paper Size: A4 vs A3 */}
+              {/* Paper Size */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Paper Size *
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Click Size Tier
                 </label>
-                <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setPaperSize('A4')}
-                    className={`py-1.5 text-xs font-bold rounded-lg transition ${
+                    className={`py-2 text-xs font-bold rounded-xl border transition ${
                       paperSize === 'A4'
-                        ? 'bg-slate-900 text-white font-black shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     A4
@@ -498,206 +567,148 @@ export default function ProductionEntryPage() {
                   <button
                     type="button"
                     onClick={() => setPaperSize('A3')}
-                    className={`py-1.5 text-xs font-bold rounded-lg transition ${
+                    className={`py-2 text-xs font-bold rounded-xl border transition ${
                       paperSize === 'A3'
-                        ? 'bg-slate-900 text-white font-black shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    A3 (13x19)
+                    A3 / 12x18 / 13x19
+                  </button>
+                </div>
+              </div>
+
+              {/* Print Side */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Print Sides (Clicks Mult)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPrintSide('SINGLE')}
+                    className={`py-2 text-xs font-bold rounded-xl border transition ${
+                      printSide === 'SINGLE'
+                        ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Single (1x)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrintSide('DOUBLE')}
+                    className={`py-2 text-xs font-bold rounded-xl border transition ${
+                      printSide === 'DOUBLE'
+                        ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Double (2x)
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Print Side: Single vs Double */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Print Side (Click Multiplier) *
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPrintSide('SINGLE')}
-                  className={`p-3 rounded-xl border text-left flex items-start space-x-3 transition ${
-                    printSide === 'SINGLE'
-                      ? 'border-yellow-400 bg-yellow-50 text-slate-950 font-bold'
-                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="w-5 h-5 rounded-full border border-current flex items-center justify-center mt-0.5 flex-shrink-0">
-                    {printSide === 'SINGLE' && <div className="w-2.5 h-2.5 rounded-full bg-slate-950" />}
-                  </div>
-                  <div>
-                    <div className="text-xs font-extrabold">Single-side (Simplex)</div>
-                    <div className="text-[10px] text-slate-500 font-normal">
-                      1 physical sheet = <strong>1 machine click</strong>
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPrintSide('DOUBLE')}
-                  className={`p-3 rounded-xl border text-left flex items-start space-x-3 transition ${
-                    printSide === 'DOUBLE'
-                      ? 'border-yellow-400 bg-yellow-50 text-slate-950 font-bold'
-                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="w-5 h-5 rounded-full border border-current flex items-center justify-center mt-0.5 flex-shrink-0">
-                    {printSide === 'DOUBLE' && <div className="w-2.5 h-2.5 rounded-full bg-slate-950" />}
-                  </div>
-                  <div>
-                    <div className="text-xs font-extrabold">Double-side (Duplex)</div>
-                    <div className="text-[10px] text-slate-500 font-normal">
-                      1 physical sheet = <strong>2 machine clicks</strong>
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
             {/* Media Selector */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-bold text-slate-700">
-                  Paper / Substrate Media *
-                </label>
-                {selectedMedia && (
-                  <span className="text-[11px] font-semibold text-slate-500">
-                    Current Stock:{' '}
-                    <strong
-                      className={
-                        selectedMedia.currentStock < 200
-                          ? 'text-red-600 font-extrabold'
-                          : 'text-yellow-700 font-extrabold'
-                      }
-                    >
-                      {selectedMedia.currentStock} sheets
-                    </strong>
-                  </span>
-                )}
-              </div>
+            <div className="pt-2">
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Paper Media / Substrate *
+              </label>
               <select
-                required
                 value={selectedMediaId}
                 onChange={(e) => setSelectedMediaId(e.target.value)}
-                className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:outline-none"
+                className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
               >
                 {mediaList.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.gsm} GSM {m.name} ({m.size}) — {m.brand || 'Generic'} (Stock: {m.currentStock} sheets)
+                    {m.gsm} GSM {m.name} ({m.size}) — In Stock: {m.currentStock} sheets
                   </option>
                 ))}
               </select>
             </div>
           </div>
 
-          {/* Section 3: Physical Production Quantities */}
-          <div className="pt-4 border-t border-slate-100 space-y-4">
-            <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
-              3. Production Quantities (Physical Sheets)
-            </h3>
+          {/* 3. Output Quantities */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex items-center space-x-2 border-b border-slate-100 pb-3">
+              <span className="w-6 h-6 rounded-full bg-yellow-400 text-slate-950 flex items-center justify-center font-bold text-xs">
+                3
+              </span>
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                Printed Quantities &amp; Wastage
+              </h2>
+            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Good Prints */}
-              <div className="bg-yellow-50/60 p-3 rounded-xl border border-yellow-200">
-                <label className="block text-xs font-extrabold text-slate-900 mb-1">
-                  Good Prints (Sheets) *
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Good Prints Produced *
                 </label>
                 <input
                   type="number"
                   min="1"
                   required
                   value={goodPrints}
-                  onChange={(e) => setGoodPrints(e.target.value === '' ? '' : parseInt(e.target.value))}
-                  placeholder="e.g. 500"
-                  className="w-full px-3 py-2 text-sm font-extrabold bg-white border border-yellow-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-yellow-400 focus:outline-none"
+                  onChange={(e) =>
+                    setGoodPrints(e.target.value === '' ? '' : parseInt(e.target.value))
+                  }
+                  placeholder="e.g. 50 or 100"
+                  className="w-full px-3.5 py-2.5 text-base font-black bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
                 />
-                <span className="text-[10px] text-slate-500 mt-1 block">Successfully printed sheets</span>
               </div>
 
-              {/* Wastage */}
-              <div className="bg-red-50/50 p-3 rounded-xl border border-red-200">
-                <label className="block text-xs font-extrabold text-red-900 mb-1">
-                  Wastage (Sheets)
+              <div>
+                <label className="block text-xs font-bold text-red-600 mb-1">
+                  Wastage Sheets
                 </label>
                 <input
                   type="number"
                   min="0"
                   value={wastage}
-                  onChange={(e) => setWastage(e.target.value === '' ? '' : parseInt(e.target.value))}
+                  onChange={(e) =>
+                    setWastage(e.target.value === '' ? '' : parseInt(e.target.value))
+                  }
                   placeholder="0"
-                  className="w-full px-3 py-2 text-sm font-extrabold bg-white border border-red-300 rounded-lg text-red-900 focus:ring-2 focus:ring-red-400 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 text-base font-black bg-red-50/50 border border-red-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-red-400 focus:border-red-400 focus:outline-none"
                 />
-                <span className="text-[10px] text-red-600 mt-1 block">Damaged/Spoiled physical sheets</span>
               </div>
 
-              {/* Reprint */}
-              <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200">
-                <label className="block text-xs font-extrabold text-amber-900 mb-1">
-                  Reprint (Sheets)
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Reprint Sheets
                 </label>
                 <input
                   type="number"
                   min="0"
                   value={reprint}
-                  onChange={(e) => setReprint(e.target.value === '' ? '' : parseInt(e.target.value))}
+                  onChange={(e) =>
+                    setReprint(e.target.value === '' ? '' : parseInt(e.target.value))
+                  }
                   placeholder="0"
-                  className="w-full px-3 py-2 text-sm font-extrabold bg-white border border-amber-300 rounded-lg text-amber-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 text-base font-black bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
                 />
-                <span className="text-[10px] text-amber-700 mt-1 block">Additional replacement prints</span>
               </div>
             </div>
 
-            {/* If Reprint > 0: Specify Type */}
-            {rep > 0 && (
-              <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2">
-                <label className="block text-xs font-bold text-amber-950">
-                  Reprint Reason Classification *
-                </label>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <label className="flex items-center space-x-1.5 text-xs text-slate-700 font-medium">
-                    <input
-                      type="radio"
-                      name="reprintType"
-                      checked={reprintType === 'PRODUCTION_REPRINT'}
-                      onChange={() => setReprintType('PRODUCTION_REPRINT')}
-                    />
-                    <span>1. Production Issue (Machine / Quality / Color)</span>
-                  </label>
-                  <label className="flex items-center space-x-1.5 text-xs text-slate-700 font-medium">
-                    <input
-                      type="radio"
-                      name="reprintType"
-                      checked={reprintType === 'CUSTOMER_ADDITIONAL'}
-                      onChange={() => setReprintType('CUSTOMER_ADDITIONAL')}
-                    />
-                    <span>2. Customer Additional Requirement</span>
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {/* If Wastage > 0: Reason Dropdown & Photo Upload */}
+            {/* Wastage Reason Dropdown */}
             {w > 0 && (
-              <div className="p-4 bg-red-50/50 border border-red-200 rounded-xl space-y-3">
+              <div className="p-4 bg-red-50/70 rounded-xl border border-red-200 space-y-3 animate-fade-in">
                 <div className="flex items-center space-x-1.5 text-red-800 font-bold text-xs">
-                  <AlertCircle className="w-4 h-4 text-red-600" />
-                  <span>Wastage Reason & Documentation Required</span>
+                  <AlertTriangle className="w-4 h-4 text-red-600" />
+                  <span>Wastage Reason Specification (Required for {w} sheets)</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Wastage Reason *
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Reason Category *
                     </label>
                     <select
                       required
                       value={wastageReasonId}
                       onChange={(e) => setWastageReasonId(e.target.value)}
-                      className="w-full px-3 py-2 text-xs font-semibold bg-white border border-red-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:outline-none"
+                      className="w-full px-3 py-2 text-xs font-bold bg-white border border-red-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400"
                     >
                       <option value="">-- Select Wastage Reason --</option>
                       {wastageReasons.map((wr) => (
@@ -710,7 +721,7 @@ export default function ProductionEntryPage() {
 
                   {wastageReasonId === 'wr-10' && (
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
                         Specify Other Reason *
                       </label>
                       <input
@@ -718,36 +729,11 @@ export default function ProductionEntryPage() {
                         required
                         value={wastageReasonOther}
                         onChange={(e) => setWastageReasonOther(e.target.value)}
-                        placeholder="Explain specific cause..."
-                        className="w-full px-3 py-2 text-xs font-semibold bg-white border border-red-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:outline-none"
+                        placeholder="Explain reason..."
+                        className="w-full px-3 py-2 text-xs bg-white border border-red-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400 font-medium"
                       />
                     </div>
                   )}
-                </div>
-
-                {/* Optional Photo Upload */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Optional Wastage Photo Evidence
-                  </label>
-                  <div className="flex items-center space-x-3">
-                    <label className="cursor-pointer px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center space-x-1.5 transition">
-                      <Upload className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{uploadingPhoto ? 'Uploading...' : 'Upload Photo'}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handlePhotoUpload}
-                        className="hidden"
-                      />
-                    </label>
-                    {wastagePhotoUrl && (
-                      <span className="text-xs font-semibold text-yellow-800 flex items-center space-x-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Photo attached</span>
-                      </span>
-                    )}
-                  </div>
                 </div>
               </div>
             )}
@@ -761,7 +747,7 @@ export default function ProductionEntryPage() {
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
                 placeholder="Optional operator notes..."
-                className="w-full px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
+                className="w-full px-3.5 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
               />
             </div>
           </div>
@@ -823,7 +809,7 @@ export default function ProductionEntryPage() {
               </div>
 
               {/* Cost Calculation (OWNER ONLY) */}
-              {isOwner ? (
+              {isOwner && (
                 <div className="pt-2 border-t border-white/10 space-y-1.5">
                   <div className="flex items-center justify-between text-slate-400">
                     <span>Base Print Rate:</span>
@@ -842,21 +828,6 @@ export default function ProductionEntryPage() {
                     <span>₹{liveCalc.grandTotalCost}</span>
                   </div>
                 </div>
-              ) : (
-                <div className="p-3 bg-white/5 rounded-xl border border-white/5 text-[11px] text-slate-400 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Good Prints:</span>
-                    <strong className="text-white">{g} sheets</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Wastage + Reprints:</span>
-                    <strong className="text-slate-300">{w + rep} sheets</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Press Assignment:</span>
-                    <strong className="text-yellow-400">Konica C3070</strong>
-                  </div>
-                </div>
               )}
             </div>
 
@@ -872,6 +843,185 @@ export default function ProductionEntryPage() {
           </div>
         </div>
       </form>
+
+      {/* TODAY'S LOGGED JOBS TABLE WITH DELETE OPTION */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center space-x-2">
+              <History className="w-4 h-4 text-yellow-600" />
+              <h3 className="text-sm font-black text-slate-900">
+                Today&apos;s Production Entries ({todayJobs.length})
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500 font-medium">
+              Real-time shift log. Click 🗑️ to delete any wrongly entered job &amp; automatically restore paper stock.
+            </p>
+          </div>
+
+          <button
+            onClick={fetchTodayJobs}
+            className="flex items-center space-x-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition self-start sm:self-auto"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingJobs ? 'animate-spin' : ''}`} />
+            <span>Refresh List</span>
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-600">
+            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+              <tr>
+                <th className="py-3 px-4">Job #</th>
+                <th className="py-3 px-4">Customer &amp; Product</th>
+                <th className="py-3 px-4">Print Specs</th>
+                <th className="py-3 px-4">Media Used</th>
+                <th className="py-3 px-4">Good / Wst</th>
+                <th className="py-3 px-4">Clicks</th>
+                {isOwner && <th className="py-3 px-4">Cost (INR)</th>}
+                <th className="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {todayJobs.length === 0 ? (
+                <tr>
+                  <td colSpan={isOwner ? 8 : 7} className="py-8 text-center text-slate-400">
+                    No production jobs logged today yet.
+                  </td>
+                </tr>
+              ) : (
+                todayJobs.map((j: any) => (
+                  <tr key={j.id} className="hover:bg-slate-50/80 transition">
+                    <td className="py-3 px-4 font-black text-slate-900">
+                      {j.jobNumber}
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="font-bold text-slate-900">{j.customerName}</div>
+                      <div className="text-[10px] text-slate-400 font-semibold">{j.product}</div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center space-x-1">
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
+                            j.printType === 'COLOUR'
+                              ? 'bg-yellow-100 text-slate-950 border border-yellow-300'
+                              : 'bg-slate-100 text-slate-800'
+                          }`}
+                        >
+                          {j.printType}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                          {j.paperSize}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                          {j.printSide === 'DOUBLE' ? '2-Side' : '1-Side'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="text-slate-900 font-bold truncate max-w-[150px]">
+                        {j.mediaName}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-semibold">
+                        {j.sheetConsumption} sheets used
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="font-black text-slate-900">{j.goodPrints} good</div>
+                      {j.wastage > 0 && (
+                        <div className="text-[10px] text-red-600 font-bold">
+                          +{j.wastage} waste ({j.wastageReasonName || 'N/A'})
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 font-black text-yellow-800 text-sm">
+                      {j.machineClicks} clicks
+                    </td>
+                    {isOwner && (
+                      <td className="py-3 px-4 font-black text-slate-950 text-sm">
+                        ₹{j.grandTotalCost}
+                      </td>
+                    )}
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setDeleteModalJob(j)}
+                        className="px-2.5 py-1.5 bg-red-50 hover:bg-red-600 text-red-700 hover:text-white rounded-lg font-bold text-xs transition flex items-center space-x-1 ml-auto"
+                        title="Delete mistaken entry & restore sheets"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteModalJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-red-600 px-6 py-4 flex items-center justify-between text-white">
+              <div className="flex items-center space-x-2.5">
+                <Trash2 className="w-5 h-5" />
+                <h3 className="text-sm font-black">Delete Production Job?</h3>
+              </div>
+              <button
+                onClick={() => setDeleteModalJob(null)}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-red-700 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <p className="text-slate-600 font-medium">
+                Are you sure you want to delete this job entry?
+              </p>
+
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <div className="font-black text-slate-900 text-sm">
+                  Job #{deleteModalJob.jobNumber} — {deleteModalJob.customerName}
+                </div>
+                <div className="text-slate-500 font-semibold">{deleteModalJob.product}</div>
+                <div className="text-slate-700 pt-1 font-bold">
+                  Media: {deleteModalJob.mediaName}
+                </div>
+              </div>
+
+              <div className="p-3 bg-yellow-50 border border-yellow-300 rounded-xl text-yellow-900 font-bold flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-yellow-700 flex-shrink-0" />
+                <span>
+                  <strong>+{deleteModalJob.sheetConsumption} sheets</strong> will be automatically refunded &amp; restored to stock.
+                </span>
+              </div>
+
+              <div className="pt-2 flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalJob(null)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingJob}
+                  onClick={handleDeleteJobConfirm}
+                  className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl shadow-md shadow-red-600/20 transition disabled:opacity-50 flex items-center justify-center space-x-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{deletingJob ? 'Deleting...' : 'Yes, Delete Job'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -503,28 +503,31 @@ export const db = {
   // --- JOBS & PRODUCTION ---
   jobs: {
     create: async (params: any) => {
-      const media = await prisma.media.findUnique({ where: { id: params.mediaId } });
-      if (!media) throw new Error('Media not found');
+      // Fetch all required relations concurrently in parallel (High performance)
+      const [media, machine, userExists, rate, wr] = await Promise.all([
+        prisma.media.findUnique({ where: { id: params.mediaId } }),
+        prisma.machine.findUnique({ where: { id: params.machineId } }),
+        params.operatorId ? prisma.user.findUnique({ where: { id: params.operatorId } }) : Promise.resolve(null),
+        prisma.printRate.findUnique({
+          where: {
+            machineId_paperSize_printType: {
+              machineId: params.machineId,
+              paperSize: params.paperSize,
+              printType: params.printType,
+            },
+          },
+        }),
+        params.wastageReasonId ? prisma.wastageReason.findUnique({ where: { id: params.wastageReasonId } }) : Promise.resolve(null),
+      ]);
 
-      const machine = await prisma.machine.findUnique({ where: { id: params.machineId } });
+      if (!media) throw new Error('Media not found');
       if (!machine) throw new Error('Machine not found');
 
-      let validOperatorId = params.operatorId;
-      const userExists = await prisma.user.findUnique({ where: { id: params.operatorId } });
+      let validOperatorId = userExists ? userExists.id : params.operatorId;
       if (!userExists) {
         const firstUser = await prisma.user.findFirst();
         if (firstUser) validOperatorId = firstUser.id;
       }
-
-      let rate = await prisma.printRate.findUnique({
-        where: {
-          machineId_paperSize_printType: {
-            machineId: params.machineId,
-            paperSize: params.paperSize,
-            printType: params.printType,
-          },
-        },
-      });
 
       const unitRateVal = rate ? Number(rate.rate) : (params.paperSize === 'A3' ? (params.printType === 'COLOUR' ? 4.25 : 1.10) : (params.printType === 'COLOUR' ? 2.90 : 1.10));
       const gstVal = rate ? Number(rate.gstPercent) : 18.0;
@@ -548,15 +551,7 @@ export const db = {
       const closingStock = openingStock - calc.sheetConsumption;
 
       const productionDate = params.productionDate ? new Date(params.productionDate) : new Date();
-
-      let validWastageReasonId = params.wastageReasonId || undefined;
-      if (validWastageReasonId) {
-        const wr = await prisma.wastageReason.findUnique({ where: { id: validWastageReasonId } });
-        if (!wr) {
-          const firstReason = await prisma.wastageReason.findFirst();
-          validWastageReasonId = firstReason?.id || undefined;
-        }
-      }
+      const validWastageReasonId = wr ? wr.id : undefined;
 
       const [createdJob] = await prisma.$transaction([
         prisma.jobProduction.create({
@@ -620,14 +615,14 @@ export const db = {
       ]);
 
       if (closingStock <= media.minimumStockLevel) {
-        await prisma.notification.create({
+        prisma.notification.create({
           data: {
             title: `Low Stock: ${media.gsm} GSM ${media.name}`,
             message: `Stock is ${closingStock} sheets (Min: ${media.minimumStockLevel}).`,
             type: 'LOW_STOCK',
             linkUrl: '/inventory',
           },
-        });
+        }).catch(() => {});
       }
 
       return {
@@ -742,6 +737,72 @@ export const db = {
       } catch {
         return null;
       }
+    },
+
+    delete: async (id: string, userId?: string) => {
+      const job = await prisma.jobProduction.findUnique({
+        where: { id },
+        include: { media: true },
+      });
+      if (!job) throw new Error('Job not found');
+
+      let validUserId = userId;
+      if (!validUserId) {
+        const firstUser = await prisma.user.findFirst();
+        validUserId = firstUser?.id || 'usr-owner-001';
+      }
+
+      // Restore consumed sheets back to media currentStock
+      const sheetsToRestore = job.sheetConsumption;
+      const currentStock = job.media.currentStock;
+      const restoredStock = currentStock + sheetsToRestore;
+
+      await prisma.$transaction([
+        // 1. Delete the job record
+        prisma.jobProduction.delete({
+          where: { id },
+        }),
+        // 2. Restore paper stock
+        prisma.media.update({
+          where: { id: job.mediaId },
+          data: { currentStock: restoredStock },
+        }),
+        // 3. Log stock movement restoration
+        prisma.inventoryMovement.create({
+          data: {
+            mediaId: job.mediaId,
+            quantity: sheetsToRestore,
+            openingStock: currentStock,
+            closingStock: restoredStock,
+            movementType: 'STOCK_ADJUSTMENT',
+            referenceId: `ROLLBACK-${job.jobNumber}`,
+            reason: `Restored ${sheetsToRestore} sheets from deleted Job #${job.jobNumber} (${job.customerName})`,
+            userId: validUserId,
+          },
+        }),
+        // 4. Record audit log
+        prisma.auditLog.create({
+          data: {
+            userId: validUserId,
+            action: 'JOB_DELETED',
+            entity: 'JobProduction',
+            entityId: job.jobNumber,
+            newValue: {
+              jobNumber: job.jobNumber,
+              customerName: job.customerName,
+              restoredSheets: sheetsToRestore,
+              reason: 'Mistake correction / job deleted',
+            },
+          },
+        }),
+      ]);
+
+      return {
+        success: true,
+        message: `Job #${job.jobNumber} deleted successfully. ${sheetsToRestore} sheets restored to stock.`,
+        restoredSheets: sheetsToRestore,
+        newStock: restoredStock,
+      };
     },
   },
 

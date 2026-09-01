@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { requireAuth, requireOwner } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export async function GET(
   request: NextRequest,
@@ -19,9 +19,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const { user, error } = requireOwner(request);
+  const { user, error } = requireAuth(request);
   if (error || !user) {
-    return NextResponse.json({ error: error || 'Forbidden: Owner edit privilege required.' }, { status: 403 });
+    return NextResponse.json({ error: error || 'Unauthorized' }, { status: 401 });
   }
 
   try {
@@ -32,5 +32,27 @@ export async function PATCH(
     return NextResponse.json({ success: true, job: updated });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const { user, error } = requireAuth(request);
+  if (error || !user) {
+    return NextResponse.json({ error: error || 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const result = await db.jobs.delete(params.id, user.id);
+    return NextResponse.json({
+      success: true,
+      message: result.message,
+      restoredSheets: result.restoredSheets,
+      newStock: result.newStock,
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || 'Failed to delete job' }, { status: 500 });
   }
 }
