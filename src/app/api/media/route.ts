@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { requireAuth, requireOwner } from '@/lib/auth';
+import { requireAuth } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   const { error } = requireAuth(request);
@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { user, error } = requireOwner(request);
-  if (error || !user) return NextResponse.json({ error: error || 'Forbidden: Owner only' }, { status: 403 });
+  const { user, error } = requireAuth(request);
+  if (error || !user) return NextResponse.json({ error: error || 'Unauthorized' }, { status: 401 });
 
   try {
     const body = await request.json();
@@ -40,8 +40,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const { user, error } = requireOwner(request);
-  if (error || !user) return NextResponse.json({ error: error || 'Forbidden: Owner only' }, { status: 403 });
+  const { user, error } = requireAuth(request);
+  if (error || !user) return NextResponse.json({ error: error || 'Unauthorized' }, { status: 401 });
 
   try {
     const body = await request.json();
@@ -50,10 +50,10 @@ export async function PATCH(request: NextRequest) {
     if (!id) return NextResponse.json({ error: 'Media ID is required' }, { status: 400 });
 
     const updated = await db.media.update(id, {
-      name,
+      name: name?.trim(),
       gsm: gsm !== undefined ? Number(gsm) : undefined,
-      size,
-      brand,
+      size: size?.trim(),
+      brand: brand?.trim(),
       minimumStockLevel: minimumStockLevel !== undefined ? Number(minimumStockLevel) : undefined,
       isActive,
     });

@@ -24,7 +24,12 @@ import {
   Save,
   Check,
   ListOrdered,
+  ShoppingCart,
 } from 'lucide-react';
+
+const COMMON_SIZES = ['13x19', '12x18', 'A4', 'A3', '12x24', '13x40'];
+const COMMON_GSMS = [80, 100, 130, 170, 220, 250, 300, 350];
+const COMMON_BRANDS = ['ITC Cyber XL', 'Century Star', 'JK Paper', 'Nippon', 'Generic'];
 
 export default function InventoryPage() {
   const { user, token, isOwner, loading: authLoading } = useAuth();
@@ -60,7 +65,7 @@ export default function InventoryPage() {
   const [newMediaName, setNewMediaName] = useState('');
   const [newMediaGsm, setNewMediaGsm] = useState<number | ''>(300);
   const [newMediaSize, setNewMediaSize] = useState('13x19');
-  const [newMediaBrand, setNewMediaBrand] = useState('');
+  const [newMediaBrand, setNewMediaBrand] = useState('Generic');
   const [newMediaStock, setNewMediaStock] = useState<number | ''>(0);
   const [newMediaMinStock, setNewMediaMinStock] = useState<number | ''>(100);
 
@@ -147,7 +152,7 @@ export default function InventoryPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to restock');
 
-      setStatusMsg({ type: 'success', text: data.message });
+      setStatusMsg({ type: 'success', text: `Added +${restockQty} sheets to '${selectedMedia.name}'. New Stock: ${selectedMedia.currentStock + Number(restockQty)} sheets.` });
       setRestockModalOpen(false);
       setRestockQty('');
       setRestockReason('');
@@ -279,12 +284,12 @@ export default function InventoryPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to add media');
 
-      setStatusMsg({ type: 'success', text: `Media '${newMediaName}' added successfully!` });
+      setStatusMsg({ type: 'success', text: `New Media '${newMediaName}' (${newMediaGsm} GSM, ${newMediaSize}) added to inventory successfully!` });
       setAddMediaModalOpen(false);
       setNewMediaName('');
       setNewMediaGsm(300);
       setNewMediaSize('13x19');
-      setNewMediaBrand('');
+      setNewMediaBrand('Generic');
       setNewMediaStock(0);
       setNewMediaMinStock(100);
       fetchInventoryData();
@@ -322,7 +327,7 @@ export default function InventoryPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update media');
 
-      setStatusMsg({ type: 'success', text: `Media '${editName}' updated successfully!` });
+      setStatusMsg({ type: 'success', text: `Media '${editName}' (${editGsm} GSM, ${editSize}) updated successfully!` });
       setEditMediaModalOpen(false);
       fetchInventoryData();
     } catch (err: any) {
@@ -349,6 +354,14 @@ export default function InventoryPage() {
     setAdjustTargetStock(m.currentStock);
     setAdjustReason('Physical audit reconciliation / stock correction');
     setAdjustModalOpen(true);
+  };
+
+  // Open Restock Modal with Pre-fill
+  const openRestockModal = (m: any) => {
+    setSelectedMedia(m);
+    setRestockQty('');
+    setRestockReason('');
+    setRestockModalOpen(true);
   };
 
   const filteredMedia = mediaList.filter((m) =>
@@ -386,6 +399,30 @@ export default function InventoryPage() {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Add New Media (Paper Type) */}
+          <button
+            onClick={() => setAddMediaModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-950 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition"
+            title="Create a new paper type or sticker item in the catalog"
+          >
+            <PackagePlus className="w-4 h-4 text-yellow-400" />
+            <span>➕ Add New Media</span>
+          </button>
+
+          {/* Restock Purchase */}
+          <button
+            onClick={() => {
+              if (mediaList.length > 0) {
+                openRestockModal(mediaList[0]);
+              }
+            }}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-sm transition"
+            title="Record newly purchased paper sheets received into stock"
+          >
+            <ShoppingCart className="w-4 h-4 stroke-[2.5]" />
+            <span>📦 Purchase Restock</span>
+          </button>
+
           {/* Bulk Audit Tool */}
           <button
             onClick={() => {
@@ -397,35 +434,10 @@ export default function InventoryPage() {
               setBulkAuditModalOpen(true);
             }}
             className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl border border-slate-300 shadow-2xs transition"
-            title="Adjust all paper stocks at once in a quick-entry table"
+            title="Adjust all paper stocks at once in a fast entry table"
           >
             <ListOrdered className="w-4 h-4 text-yellow-600" />
-            <span>Fast Bulk Stock Audit</span>
-          </button>
-
-          {isOwner && (
-            <button
-              onClick={() => setAddMediaModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition"
-            >
-              <PackagePlus className="w-4 h-4 text-yellow-400" />
-              <span>Add New Media</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => {
-              if (mediaList.length > 0) {
-                setSelectedMedia(mediaList[0]);
-                setRestockQty('');
-                setRestockReason('');
-                setRestockModalOpen(true);
-              }
-            }}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-sm transition"
-          >
-            <PlusCircle className="w-4 h-4 stroke-[2.5]" />
-            <span>Restock Purchase</span>
+            <span>Fast Bulk Audit</span>
           </button>
         </div>
       </div>
@@ -507,7 +519,7 @@ export default function InventoryPage() {
               Media Master Catalog ({filteredMedia.length})
             </h2>
             <p className="text-xs text-slate-500 font-medium">
-              Click &quot;Adjust&quot; on any item to set real physical stock count, or &quot;Restock&quot; to add received sheets
+              Click &quot;✏️ Edit&quot; to change paper name, GSM &amp; size | &quot;Adjust&quot; to set real physical stock | &quot;Restock&quot; to add purchased sheets
             </p>
           </div>
 
@@ -552,7 +564,16 @@ export default function InventoryPage() {
                   return (
                     <tr key={m.id} className="hover:bg-slate-50/80 transition">
                       <td className="py-3.5 px-4 font-bold text-slate-900">
-                        {m.name}
+                        <div className="flex items-center space-x-1.5">
+                          <span>{m.name}</span>
+                          <button
+                            onClick={() => openEditModal(m)}
+                            className="text-slate-400 hover:text-slate-950 transition p-1 hover:bg-slate-200 rounded"
+                            title="Edit Name, GSM, Size, Brand"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="font-extrabold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
@@ -592,7 +613,7 @@ export default function InventoryPage() {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end space-x-1.5">
-                          {/* Quick Adjust Button */}
+                          {/* 1. Quick Adjust Button */}
                           <button
                             onClick={() => openAdjustModal(m)}
                             className="px-2.5 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-lg shadow-2xs transition flex items-center space-x-1"
@@ -602,31 +623,25 @@ export default function InventoryPage() {
                             <span>Adjust</span>
                           </button>
 
-                          {/* Quick Restock Button */}
+                          {/* 2. Quick Purchase Restock Button */}
                           <button
-                            onClick={() => {
-                              setSelectedMedia(m);
-                              setRestockQty('');
-                              setRestockReason('');
-                              setRestockModalOpen(true);
-                            }}
+                            onClick={() => openRestockModal(m)}
                             className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-lg transition flex items-center space-x-1"
-                            title="Add Restock Quantity"
+                            title="Add Purchased Stock Quantity"
                           >
                             <PlusCircle className="w-3.5 h-3.5" />
-                            <span>Restock</span>
+                            <span>Purchase</span>
                           </button>
 
-                          {/* Edit Media Details (Owner) */}
-                          {isOwner && (
-                            <button
-                              onClick={() => openEditModal(m)}
-                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 rounded-lg transition"
-                              title="Edit Media Attributes"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                          {/* 3. Edit Media Details */}
+                          <button
+                            onClick={() => openEditModal(m)}
+                            className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-950 rounded-lg transition flex items-center space-x-1 font-semibold text-xs"
+                            title="Edit Media Attributes (Name, GSM, Size, Brand)"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -959,18 +974,18 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* MODAL 3: RESTOCK MODAL */}
+      {/* MODAL 3: PURCHASE RESTOCK MODAL */}
       {restockModalOpen && selectedMedia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="bg-slate-950 px-6 py-4 flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center space-x-2.5">
                 <div className="w-8 h-8 rounded-lg bg-yellow-400 text-slate-950 flex items-center justify-center font-bold">
-                  <PlusCircle className="w-4 h-4 stroke-[2.5]" />
+                  <ShoppingCart className="w-4 h-4 stroke-[2.5]" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-white">Restock Paper Purchase</h3>
-                  <p className="text-[11px] text-yellow-400 font-medium">Add received reams / sheets into inventory</p>
+                  <h3 className="text-sm font-black text-white">Record Paper Purchase</h3>
+                  <p className="text-[11px] text-yellow-400 font-medium">Add received sheets/reams into stock</p>
                 </div>
               </div>
               <button
@@ -996,7 +1011,7 @@ export default function InventoryPage() {
                 >
                   {mediaList.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.gsm} GSM {m.name} ({m.size}) — Stock: {m.currentStock}
+                      {m.gsm} GSM {m.name} ({m.size}) — Current Stock: {m.currentStock}
                     </option>
                   ))}
                 </select>
@@ -1004,8 +1019,29 @@ export default function InventoryPage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Quantity Received (Sheets) *
+                  Quantity Purchased &amp; Received (Sheets) *
                 </label>
+
+                {/* Quick Add Quantity Chips */}
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    { label: '+250 (1/2 Ream)', val: 250 },
+                    { label: '+500 (1 Ream)', val: 500 },
+                    { label: '+1,000 (2 Reams)', val: 1000 },
+                    { label: '+2,500 (5 Reams/Box)', val: 2500 },
+                    { label: '+5,000 (Bulk)', val: 5000 },
+                  ].map((chip) => (
+                    <button
+                      key={chip.val}
+                      type="button"
+                      onClick={() => setRestockQty(chip.val)}
+                      className="px-2 py-1 rounded-lg bg-yellow-50 hover:bg-yellow-200 text-[10px] font-extrabold text-slate-900 border border-yellow-300 transition"
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+
                 <input
                   type="number"
                   min="1"
@@ -1013,24 +1049,27 @@ export default function InventoryPage() {
                   value={restockQty}
                   onChange={(e) => setRestockQty(e.target.value === '' ? '' : parseInt(e.target.value))}
                   placeholder="e.g. 500 or 1000"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-base font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 />
                 {restockQty !== '' && (
-                  <div className="text-[11px] font-bold text-yellow-800 mt-1">
-                    New Stock will be: {selectedMedia.currentStock + Number(restockQty)} sheets
+                  <div className="text-[11px] font-bold text-yellow-800 mt-1.5 p-2 bg-yellow-50 rounded-lg border border-yellow-200 flex items-center justify-between">
+                    <span>New Stock after purchase:</span>
+                    <span className="font-black text-sm text-slate-950">
+                      {selectedMedia.currentStock + Number(restockQty)} sheets
+                    </span>
                   </div>
                 )}
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Purchase Reference / Supplier Note
+                  Supplier / Purchase Invoice Note
                 </label>
                 <input
                   type="text"
                   value={restockReason}
                   onChange={(e) => setRestockReason(e.target.value)}
-                  placeholder="e.g. Invoice #PB-9812 / Century Mill purchase"
+                  placeholder="e.g. Invoice #PB-9812 / Century Mill direct purchase"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 />
               </div>
@@ -1046,9 +1085,10 @@ export default function InventoryPage() {
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="flex-1 py-2.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-yellow-400/20 transition disabled:opacity-50"
+                  className="flex-1 py-2.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-yellow-400/20 transition disabled:opacity-50 flex items-center justify-center space-x-1.5"
                 >
-                  {actionLoading ? 'Adding...' : 'Confirm Restock'}
+                  <PlusCircle className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>{actionLoading ? 'Adding...' : 'Confirm Purchase & Add Stock'}</span>
                 </button>
               </div>
             </form>
@@ -1066,8 +1106,8 @@ export default function InventoryPage() {
                   <PackagePlus className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-white">Add New Media Stock</h3>
-                  <p className="text-[11px] text-yellow-400 font-medium">Create a new paper type or sticker</p>
+                  <h3 className="text-sm font-black text-white">Add New Media Paper</h3>
+                  <p className="text-[11px] text-yellow-400 font-medium">Create a new paper or sticker in catalog</p>
                 </div>
               </div>
               <button
@@ -1088,16 +1128,33 @@ export default function InventoryPage() {
                   required
                   value={newMediaName}
                   onChange={(e) => setNewMediaName(e.target.value)}
-                  placeholder="e.g. Art Board / Velvet Matte Sticker"
+                  placeholder="e.g. Art Board / Velvet Matte Sticker / Metallic Gold"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
+                {/* GSM */}
                 <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">
                     GSM (Weight) *
                   </label>
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {COMMON_GSMS.slice(0, 4).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setNewMediaGsm(g)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition ${
+                          newMediaGsm === g
+                            ? 'bg-yellow-400 text-slate-950 border-yellow-400'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     type="number"
                     required
@@ -1106,35 +1163,68 @@ export default function InventoryPage() {
                     value={newMediaGsm}
                     onChange={(e) => setNewMediaGsm(e.target.value === '' ? '' : parseInt(e.target.value))}
                     placeholder="300"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   />
                 </div>
 
+                {/* Size */}
                 <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">
                     Size *
                   </label>
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {COMMON_SIZES.slice(0, 3).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setNewMediaSize(s)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition ${
+                          newMediaSize === s
+                            ? 'bg-yellow-400 text-slate-950 border-yellow-400'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     type="text"
                     required
                     value={newMediaSize}
                     onChange={(e) => setNewMediaSize(e.target.value)}
                     placeholder="13x19 or A4"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Brand / Mill Manufacturer
+                  Brand / Mill
                 </label>
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {COMMON_BRANDS.map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => setNewMediaBrand(b)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold border transition ${
+                        newMediaBrand === b
+                          ? 'bg-yellow-400 text-slate-950 border-yellow-400'
+                          : 'bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {b}
+                    </button>
+                  ))}
+                </div>
                 <input
                   type="text"
                   value={newMediaBrand}
                   onChange={(e) => setNewMediaBrand(e.target.value)}
                   placeholder="e.g. ITC Cyber XL / Century / Generic"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 />
               </div>
 
@@ -1149,7 +1239,7 @@ export default function InventoryPage() {
                     value={newMediaStock}
                     onChange={(e) => setNewMediaStock(e.target.value === '' ? '' : parseInt(e.target.value))}
                     placeholder="0"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   />
                 </div>
 
@@ -1163,7 +1253,7 @@ export default function InventoryPage() {
                     value={newMediaMinStock}
                     onChange={(e) => setNewMediaMinStock(e.target.value === '' ? '' : parseInt(e.target.value))}
                     placeholder="100"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   />
                 </div>
               </div>
@@ -1181,7 +1271,7 @@ export default function InventoryPage() {
                   disabled={actionLoading}
                   className="flex-1 py-2.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-yellow-400/20 transition disabled:opacity-50"
                 >
-                  {actionLoading ? 'Creating...' : 'Add Media'}
+                  {actionLoading ? 'Creating...' : 'Create & Add Paper'}
                 </button>
               </div>
             </form>
@@ -1196,11 +1286,11 @@ export default function InventoryPage() {
             <div className="bg-slate-950 px-6 py-4 flex items-center justify-between border-b border-slate-800">
               <div className="flex items-center space-x-2.5">
                 <div className="w-8 h-8 rounded-lg bg-yellow-400 text-slate-950 flex items-center justify-center font-bold">
-                  <Edit2 className="w-4 h-4" />
+                  <Edit2 className="w-4 h-4 stroke-[2.5]" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-white">Edit Media Details</h3>
-                  <p className="text-[11px] text-yellow-400 font-medium">Update name, GSM, size, brand</p>
+                  <h3 className="text-sm font-black text-white">Edit Paper Details</h3>
+                  <p className="text-[11px] text-yellow-400 font-medium">Update Name, GSM, Size, and Brand</p>
                 </div>
               </div>
               <button
@@ -1230,6 +1320,22 @@ export default function InventoryPage() {
                   <label className="block text-xs font-bold text-slate-800 mb-1">
                     GSM (Weight) *
                   </label>
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {COMMON_GSMS.slice(0, 4).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setEditGsm(g)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition ${
+                          editGsm === g
+                            ? 'bg-yellow-400 text-slate-950 border-yellow-400'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     type="number"
                     required
@@ -1237,7 +1343,7 @@ export default function InventoryPage() {
                     max="600"
                     value={editGsm}
                     onChange={(e) => setEditGsm(e.target.value === '' ? '' : parseInt(e.target.value))}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   />
                 </div>
 
@@ -1245,12 +1351,28 @@ export default function InventoryPage() {
                   <label className="block text-xs font-bold text-slate-800 mb-1">
                     Size *
                   </label>
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {COMMON_SIZES.slice(0, 3).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setEditSize(s)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition ${
+                          editSize === s
+                            ? 'bg-yellow-400 text-slate-950 border-yellow-400'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     type="text"
                     required
                     value={editSize}
                     onChange={(e) => setEditSize(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   />
                 </div>
               </div>
@@ -1259,11 +1381,27 @@ export default function InventoryPage() {
                 <label className="block text-xs font-bold text-slate-800 mb-1">
                   Brand / Mill Manufacturer
                 </label>
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {COMMON_BRANDS.map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => setEditBrand(b)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold border transition ${
+                        editBrand === b
+                          ? 'bg-yellow-400 text-slate-950 border-yellow-400'
+                          : 'bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {b}
+                    </button>
+                  ))}
+                </div>
                 <input
                   type="text"
                   value={editBrand}
                   onChange={(e) => setEditBrand(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 />
               </div>
 
@@ -1291,9 +1429,10 @@ export default function InventoryPage() {
                 <button
                   type="submit"
                   disabled={actionLoading}
-                  className="flex-1 py-2.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-yellow-400/20 transition disabled:opacity-50"
+                  className="flex-1 py-2.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-md shadow-yellow-400/20 transition disabled:opacity-50 flex items-center justify-center space-x-1.5"
                 >
-                  {actionLoading ? 'Saving...' : 'Save Changes'}
+                  <Save className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>{actionLoading ? 'Saving...' : 'Save Paper Changes'}</span>
                 </button>
               </div>
             </form>
