@@ -18,6 +18,7 @@ import {
   Trash2,
   X,
   CheckCircle2,
+  Search,
 } from 'lucide-react';
 import { exportToExcel, exportToPDF } from '@/lib/export-utils';
 
@@ -30,6 +31,7 @@ export default function ReportsPage() {
   const [endDate, setEndDate] = useState('');
   const [printType, setPrintType] = useState('');
   const [paperSize, setPaperSize] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -292,46 +294,83 @@ export default function ReportsPage() {
       </div>
 
       {/* Detailed Production Jobs Ledger */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-5 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-black text-slate-900">
-              Detailed Job Log ({jobsList.length})
-            </h3>
-            <p className="text-xs text-slate-500 font-medium">
-              Every job logged with specs, sheets, meter clicks, and operator tracking
-            </p>
-          </div>
-        </div>
+      {(() => {
+        const filteredJobsList = jobsList.filter((j: any) => {
+          if (!searchQuery.trim()) return true;
+          const q = searchQuery.toLowerCase().trim();
+          return (
+            (j.jobNumber && j.jobNumber.toLowerCase().includes(q)) ||
+            (j.customerName && j.customerName.toLowerCase().includes(q)) ||
+            (j.product && j.product.toLowerCase().includes(q)) ||
+            (j.mediaName && j.mediaName.toLowerCase().includes(q)) ||
+            (j.operatorName && j.operatorName.toLowerCase().includes(q))
+          );
+        });
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-600">
-            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-              <tr>
-                <th className="py-3 px-4">Job #</th>
-                <th className="py-3 px-4">Date</th>
-                <th className="py-3 px-4">Customer</th>
-                <th className="py-3 px-4">Product</th>
-                <th className="py-3 px-4">Media</th>
-                <th className="py-3 px-4">Specs</th>
-                <th className="py-3 px-4">Good</th>
-                <th className="py-3 px-4">Wastage</th>
-                <th className="py-3 px-4">Sheets</th>
-                <th className="py-3 px-4">Clicks</th>
-                {isOwner && <th className="py-3 px-4">Grand Cost</th>}
-                <th className="py-3 px-4">Operator</th>
-                <th className="py-3 px-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {jobsList.length === 0 ? (
-                <tr>
-                  <td colSpan={isOwner ? 13 : 12} className="py-8 text-center text-slate-400">
-                    No production jobs logged in this filtered period.
-                  </td>
-                </tr>
-              ) : (
-                jobsList.map((j: any) => (
+        return (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-900">
+                  Detailed Job Log ({filteredJobsList.length}{filteredJobsList.length !== jobsList.length ? ` of ${jobsList.length}` : ''})
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Search by Job # or Customer Name across this reporting period
+                </p>
+              </div>
+
+              {/* Search Bar Input */}
+              <div className="relative min-w-[240px] sm:min-w-[280px]">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="🔍 Search Job #, Customer, Media..."
+                  className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700 p-0.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-600">
+                <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Job #</th>
+                    <th className="py-3 px-4">Date</th>
+                    <th className="py-3 px-4">Customer</th>
+                    <th className="py-3 px-4">Product</th>
+                    <th className="py-3 px-4">Media</th>
+                    <th className="py-3 px-4">Specs</th>
+                    <th className="py-3 px-4">Good</th>
+                    <th className="py-3 px-4">Wastage</th>
+                    <th className="py-3 px-4">Sheets</th>
+                    <th className="py-3 px-4">Clicks</th>
+                    {isOwner && <th className="py-3 px-4">Grand Cost</th>}
+                    <th className="py-3 px-4">Operator</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {filteredJobsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={isOwner ? 13 : 12} className="py-8 text-center text-slate-400">
+                        {searchQuery
+                          ? `No production jobs matching "${searchQuery}" found.`
+                          : 'No production jobs logged in this filtered period.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredJobsList.map((j: any) => (
                   <tr key={j.id} className="hover:bg-slate-50/80 transition">
                     <td className="py-3 px-4 font-black text-slate-900">{j.jobNumber}</td>
                     <td className="py-3 px-4 font-mono text-[11px] text-slate-500">{j.productionDate}</td>
@@ -371,6 +410,8 @@ export default function ReportsPage() {
           </table>
         </div>
       </div>
+    );
+  })()}
 
       {/* DELETE CONFIRMATION MODAL */}
       {deleteModalJob && (

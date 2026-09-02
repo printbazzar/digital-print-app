@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   History,
   Check,
+  Search,
 } from 'lucide-react';
 import { calculateJobProduction, PrintSide, PaperSize, PrintType } from '@/lib/calculations';
 
@@ -35,6 +36,7 @@ export default function ProductionEntryPage() {
   const [rates, setRates] = useState<any[]>([]);
   const [todayJobs, setTodayJobs] = useState<any[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
+  const [searchJobTerm, setSearchJobTerm] = useState('');
 
   // Form State
   const [jobNumber, setJobNumber] = useState('');
@@ -848,53 +850,93 @@ export default function ProductionEntryPage() {
         </div>
       </form>
 
-      {/* TODAY'S LOGGED JOBS TABLE WITH DELETE OPTION */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center space-x-2">
-              <History className="w-4 h-4 text-yellow-600" />
-              <h3 className="text-sm font-black text-slate-900">
-                Today&apos;s Production Entries ({todayJobs.length})
-              </h3>
+      {/* TODAY'S LOGGED JOBS TABLE WITH SEARCH & DELETE OPTION */}
+      {(() => {
+        const filteredTodayJobs = todayJobs.filter((j: any) => {
+          if (!searchJobTerm.trim()) return true;
+          const q = searchJobTerm.toLowerCase().trim();
+          return (
+            (j.jobNumber && j.jobNumber.toLowerCase().includes(q)) ||
+            (j.customerName && j.customerName.toLowerCase().includes(q)) ||
+            (j.product && j.product.toLowerCase().includes(q)) ||
+            (j.mediaName && j.mediaName.toLowerCase().includes(q)) ||
+            (j.operatorName && j.operatorName.toLowerCase().includes(q))
+          );
+        });
+
+        return (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <History className="w-4 h-4 text-yellow-600" />
+                  <h3 className="text-sm font-black text-slate-900">
+                    Today&apos;s Production Entries ({filteredTodayJobs.length}{filteredTodayJobs.length !== todayJobs.length ? ` of ${todayJobs.length}` : ''})
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 font-medium">
+                  Search by Job # or Customer Name, or click 🗑️ to delete mistaken entries.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Search Bar Input */}
+                <div className="relative min-w-[240px] sm:min-w-[280px]">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={searchJobTerm}
+                    onChange={(e) => setSearchJobTerm(e.target.value)}
+                    placeholder="🔍 Search Job #, Customer name..."
+                    className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400"
+                  />
+                  {searchJobTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchJobTerm('')}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700 p-0.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={fetchTodayJobs}
+                  className="flex items-center space-x-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition self-start sm:self-auto"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingJobs ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+              </div>
             </div>
-            <p className="text-xs text-slate-500 font-medium">
-              Real-time shift log. Click 🗑️ to delete any wrongly entered job &amp; automatically restore paper stock.
-            </p>
-          </div>
 
-          <button
-            onClick={fetchTodayJobs}
-            className="flex items-center space-x-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition self-start sm:self-auto"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loadingJobs ? 'animate-spin' : ''}`} />
-            <span>Refresh List</span>
-          </button>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-600">
-            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-              <tr>
-                <th className="py-3 px-4">Job #</th>
-                <th className="py-3 px-4">Customer &amp; Product</th>
-                <th className="py-3 px-4">Print Specs</th>
-                <th className="py-3 px-4">Media Used</th>
-                <th className="py-3 px-4">Good / Wst</th>
-                <th className="py-3 px-4">Clicks</th>
-                {isOwner && <th className="py-3 px-4">Cost (INR)</th>}
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {todayJobs.length === 0 ? (
-                <tr>
-                  <td colSpan={isOwner ? 8 : 7} className="py-8 text-center text-slate-400">
-                    No production jobs logged today yet.
-                  </td>
-                </tr>
-              ) : (
-                todayJobs.map((j: any) => (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-600">
+                <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Job #</th>
+                    <th className="py-3 px-4">Customer &amp; Product</th>
+                    <th className="py-3 px-4">Print Specs</th>
+                    <th className="py-3 px-4">Media Used</th>
+                    <th className="py-3 px-4">Good / Wst</th>
+                    <th className="py-3 px-4">Clicks</th>
+                    {isOwner && <th className="py-3 px-4">Cost (INR)</th>}
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {filteredTodayJobs.length === 0 ? (
+                    <tr>
+                      <td colSpan={isOwner ? 8 : 7} className="py-8 text-center text-slate-400">
+                        {searchJobTerm
+                          ? `No production jobs matching "${searchJobTerm}" found.`
+                          : 'No production jobs logged today yet.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredTodayJobs.map((j: any) => (
                   <tr key={j.id} className="hover:bg-slate-50/80 transition">
                     <td className="py-3 px-4 font-black text-slate-900">
                       {j.jobNumber}
@@ -964,6 +1006,8 @@ export default function ProductionEntryPage() {
           </table>
         </div>
       </div>
+    );
+  })()}
 
       {/* DELETE CONFIRMATION MODAL */}
       {deleteModalJob && (
