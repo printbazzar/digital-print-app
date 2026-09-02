@@ -3,8 +3,10 @@ import { db } from '@/lib/db';
 import { requireAuth, requireOwner } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
-  const { error } = requireAuth(request);
-  if (error) return NextResponse.json({ error }, { status: 401 });
+  const { user, error } = requireOwner(request);
+  if (error || !user) {
+    return NextResponse.json({ error: error || 'Forbidden: Owner privilege required to view staff console.' }, { status: 403 });
+  }
 
   const users = await db.users.list();
   return NextResponse.json({ users });
