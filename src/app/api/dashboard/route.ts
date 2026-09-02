@@ -34,10 +34,10 @@ export async function GET(request: NextRequest) {
     endDateStr = customEnd;
   }
 
-  const allJobs = await db.jobs.list();
-  const filteredJobs = allJobs.filter(
-    (j) => j.productionDate >= startDateStr && j.productionDate <= endDateStr
-  );
+  const filteredJobs = await db.jobs.list({
+    startDate: startDateStr,
+    endDate: endDateStr,
+  });
 
   // Aggregations
   const totalJobs = filteredJobs.length;
@@ -105,12 +105,15 @@ export async function GET(request: NextRequest) {
   );
 
   // 14-day Production and Wastage Trend
+  const trend14DaysAgo = format(subDays(now, 13), 'yyyy-MM-dd');
+  const trendJobs = await db.jobs.list({ startDate: trend14DaysAgo, endDate: todayStr });
+
   const trendDays: { date: string; label: string; clicks: number; wastagePct: number; jobs: number }[] = [];
   for (let i = 13; i >= 0; i--) {
     const d = subDays(now, i);
     const dStr = format(d, 'yyyy-MM-dd');
     const dayLabel = format(d, 'dd MMM');
-    const dayJobs = allJobs.filter((j) => j.productionDate === dStr);
+    const dayJobs = trendJobs.filter((j) => j.productionDate === dStr);
 
     const dayClicks = dayJobs.reduce((acc, j) => acc + j.machineClicks, 0);
     const daySheets = dayJobs.reduce((acc, j) => acc + j.sheetConsumption, 0);

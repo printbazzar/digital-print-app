@@ -728,53 +728,54 @@ export const db = {
 
     list: async (filter?: any) => {
       try {
+        const whereClause: any = {};
+        if (filter?.date) {
+          const start = new Date(filter.date + 'T00:00:00.000Z');
+          const end = new Date(filter.date + 'T23:59:59.999Z');
+          whereClause.productionDate = { gte: start, lte: end };
+        } else if (filter?.startDate || filter?.endDate) {
+          whereClause.productionDate = {};
+          if (filter.startDate) whereClause.productionDate.gte = new Date(filter.startDate + 'T00:00:00.000Z');
+          if (filter.endDate) whereClause.productionDate.lte = new Date(filter.endDate + 'T23:59:59.999Z');
+        }
+        if (filter?.operatorId) whereClause.operatorId = filter.operatorId;
+        if (filter?.machineId) whereClause.machineId = filter.machineId;
+        if (filter?.search) {
+          whereClause.OR = [
+            { jobNumber: { contains: filter.search, mode: 'insensitive' } },
+            { customerName: { contains: filter.search, mode: 'insensitive' } },
+            { product: { contains: filter.search, mode: 'insensitive' } },
+          ];
+        }
+
         const jobs = await prisma.jobProduction.findMany({
-          include: { media: true, machine: true, operator: true, wastageReason: true },
+          where: whereClause,
+          include: {
+            media: { select: { id: true, name: true, gsm: true, size: true } },
+            machine: { select: { id: true, name: true } },
+            operator: { select: { id: true, name: true } },
+            wastageReason: { select: { id: true, reason: true } },
+          },
           orderBy: { createdAt: 'desc' },
+          take: filter?.limit || 200,
         });
 
-        let list = jobs.map((j) => ({
+        return jobs.map((j) => ({
           ...j,
           unitCost: Number(j.unitCost),
           totalCost: Number(j.totalCost),
           gstAmount: Number(j.gstAmount),
           grandTotalCost: Number(j.grandTotalCost),
-          mediaName: `${j.media.gsm} GSM ${j.media.name} (${j.media.size})`,
-          machineName: j.machine.name,
-          operatorName: j.operator.name,
+          mediaName: j.media ? `${j.media.gsm} GSM ${j.media.name} (${j.media.size})` : 'Media',
+          machineName: j.machine?.name || 'Konica Minolta C3070',
+          operatorName: j.operator?.name || 'Operator',
           wastageReasonName: j.wastageReason?.reason,
           productionDate: j.productionDate.toISOString().split('T')[0],
           createdAt: j.createdAt.toISOString(),
           updatedAt: j.updatedAt.toISOString(),
         }));
-
-        if (filter?.date) {
-          list = list.filter((j) => j.productionDate === filter.date);
-        }
-        if (filter?.startDate) {
-          list = list.filter((j) => j.productionDate >= filter.startDate);
-        }
-        if (filter?.endDate) {
-          list = list.filter((j) => j.productionDate <= filter.endDate);
-        }
-        if (filter?.operatorId) {
-          list = list.filter((j) => j.operatorId === filter.operatorId);
-        }
-        if (filter?.machineId) {
-          list = list.filter((j) => j.machineId === filter.machineId);
-        }
-        if (filter?.search) {
-          const q = filter.search.toLowerCase();
-          list = list.filter(
-            (j) =>
-              j.jobNumber.toLowerCase().includes(q) ||
-              j.customerName.toLowerCase().includes(q) ||
-              j.product.toLowerCase().includes(q) ||
-              j.operatorName.toLowerCase().includes(q)
-          );
-        }
-        return list;
-      } catch {
+      } catch (err) {
+        console.error('db.jobs.list error:', err);
         return [];
       }
     },

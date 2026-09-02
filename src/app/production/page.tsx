@@ -67,6 +67,8 @@ export default function ProductionEntryPage() {
   const [deleteModalJob, setDeleteModalJob] = useState<any | null>(null);
   const [deletingJob, setDeletingJob] = useState(false);
 
+  const [toastMsg, setToastMsg] = useState<{ jobNumber: string; customer: string; clicks: number; sheets: number } | null>(null);
+
   const getAuthHeaders = () => {
     const activeToken = token || (typeof window !== 'undefined' ? localStorage.getItem('pb_token') : null);
     return {
@@ -78,7 +80,8 @@ export default function ProductionEntryPage() {
   const fetchTodayJobs = async () => {
     setLoadingJobs(true);
     try {
-      const res = await fetch('/api/jobs', { headers: getAuthHeaders() });
+      const todayStr = new Date().toISOString().split('T')[0];
+      const res = await fetch(`/api/jobs?date=${todayStr}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const d = await res.json();
         setTodayJobs(d.jobs || []);
@@ -96,40 +99,81 @@ export default function ProductionEntryPage() {
     }
   }, [user, authLoading]);
 
-  // Load masters & today's jobs
+  // Load masters & today's jobs with instant sessionStorage cache
   useEffect(() => {
+    // 1. Instant Cache Hydration (0ms load time)
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = sessionStorage.getItem('pb_masters_cache');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed.machines?.length) {
+            setMachines(parsed.machines);
+            setSelectedMachineId((prev) => prev || parsed.machines[0].id);
+          }
+          if (parsed.media?.length) {
+            setMediaList(parsed.media);
+            setSelectedMediaId((prev) => prev || parsed.media[0].id);
+          }
+          if (parsed.wastageReasons?.length) setWastageReasons(parsed.wastageReasons);
+          if (parsed.rates?.length) setRates(parsed.rates);
+        }
+      } catch {}
+    }
+
+    // 2. Background Revalidation
     const loadMasters = async () => {
       try {
         const headers = getAuthHeaders();
+        const todayStr = new Date().toISOString().split('T')[0];
         const [machRes, medRes, wrRes, ratesRes, jobsRes] = await Promise.all([
           fetch('/api/machines', { headers }),
           fetch('/api/media', { headers }),
           fetch('/api/wastage-reasons', { headers }),
           fetch('/api/rates', { headers }),
-          fetch('/api/jobs', { headers }),
+          fetch(`/api/jobs?date=${todayStr}`, { headers }),
         ]);
+
+        let mList: any[] = [];
+        let medList: any[] = [];
+        let wrList: any[] = [];
+        let rList: any[] = [];
 
         if (machRes.ok) {
           const d = await machRes.json();
-          setMachines(d.machines || []);
-          if (d.machines?.length > 0) setSelectedMachineId(d.machines[0].id);
+          mList = d.machines || [];
+          setMachines(mList);
+          if (mList.length > 0) setSelectedMachineId((prev) => prev || mList[0].id);
         }
         if (medRes.ok) {
           const d = await medRes.json();
-          setMediaList(d.media || []);
-          if (d.media?.length > 0) setSelectedMediaId(d.media[0].id);
+          medList = d.media || [];
+          setMediaList(medList);
+          if (medList.length > 0) setSelectedMediaId((prev) => prev || medList[0].id);
         }
         if (wrRes.ok) {
           const d = await wrRes.json();
-          setWastageReasons(d.reasons || []);
+          wrList = d.reasons || [];
+          setWastageReasons(wrList);
         }
         if (ratesRes.ok) {
           const d = await ratesRes.json();
-          setRates(d.rates || []);
+          rList = d.rates || [];
+          setRates(rList);
         }
         if (jobsRes.ok) {
           const d = await jobsRes.json();
           setTodayJobs(d.jobs || []);
+        }
+
+        // Update sessionStorage cache
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('pb_masters_cache', JSON.stringify({
+            machines: mList,
+            media: medList,
+            wastageReasons: wrList,
+            rates: rList,
+          }));
         }
       } catch (err) {
         console.error('Failed to load masters:', err);
@@ -198,11 +242,10 @@ export default function ProductionEntryPage() {
     }
   };
 
-  // Form Submission
+  // ZERO-LAG INSTANT FORM SUBMISSION (Optimistic UI)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    setSuccessResult(null);
 
     if (g <= 0) {
       setErrorMsg('Good Prints produced must be greater than 0.');
@@ -231,28 +274,108 @@ export default function ProductionEntryPage() {
       return;
     }
 
-    setSubmitting(true);
-    try {
-      const payload = {
-        jobNumber,
-        customerName: customerName.trim(),
-        product: product.trim(),
-        orderedQuantity: typeof orderedQuantity === 'number' ? orderedQuantity : g,
-        printType,
-        paperSize,
-        printSide,
-        mediaId: selectedMediaId,
-        machineId: selectedMachineId,
-        goodPrints: g,
-        wastage: w,
-        reprint: rep,
-        reprintType: rep > 0 ? reprintType : undefined,
-        wastageReasonId: w > 0 ? wastageReasonId : undefined,
-        wastageReasonOther: w > 0 && wastageReasonId === 'wr-10' ? wastageReasonOther : undefined,
-        wastagePhotoUrl: wastagePhotoUrl || undefined,
-        remarks: remarks.trim() || undefined,
-      };
+    // 1. Snapshot all form values
+    const savedJobNumber = jobNumber.trim();
+    const savedCustomerName = customerName.trim();
+    const savedProduct = product.trim();
+    const savedGoodPrints = g;
+    const savedWastage = w;
+    const savedReprint = rep;
+    const savedPrintType = printType;
+    const savedPaperSize = paperSize;
+    const savedPrintSide = printSide;
+    const savedMediaId = selectedMediaId;
+    const savedMachineId = selectedMachineId;
+    const savedSheetConsumption = liveCalc.sheetConsumption;
+    const savedMachineClicks = liveCalc.machineClicks;
+    const savedGrandTotal = liveCalc.grandTotalCost;
+    const savedMediaName = selectedMedia ? `${selectedMedia.gsm} GSM ${selectedMedia.name} (${selectedMedia.size})` : 'Media';
+    const tempId = 'temp-' + Date.now();
 
+    const optimisticJob = {
+      id: tempId,
+      jobNumber: savedJobNumber,
+      customerName: savedCustomerName,
+      product: savedProduct,
+      orderedQuantity: typeof orderedQuantity === 'number' ? orderedQuantity : g,
+      printType: savedPrintType,
+      paperSize: savedPaperSize,
+      printSide: savedPrintSide,
+      mediaId: savedMediaId,
+      mediaName: savedMediaName,
+      machineId: savedMachineId,
+      machineName: machines.find((m) => m.id === savedMachineId)?.name || 'Konica Minolta C3070',
+      goodPrints: savedGoodPrints,
+      wastage: savedWastage,
+      reprint: savedReprint,
+      sheetConsumption: savedSheetConsumption,
+      machineClicks: savedMachineClicks,
+      grandTotalCost: savedGrandTotal,
+      operatorName: user?.name || 'Operator',
+      productionDate: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      isOptimistic: true,
+    };
+
+    // 2. INSTANT OPTIMISTIC STATE UPDATE (<1ms) - Instant table insert
+    setTodayJobs((prev) => [optimisticJob, ...prev]);
+
+    // 3. INSTANT STOCK DEDUCTION (<1ms)
+    setMediaList((prev) =>
+      prev.map((m) =>
+        m.id === savedMediaId
+          ? { ...m, currentStock: Math.max(0, m.currentStock - savedSheetConsumption) }
+          : m
+      )
+    );
+
+    // 4. INSTANT FLASH TOAST (<1ms)
+    setToastMsg({
+      jobNumber: savedJobNumber,
+      customer: savedCustomerName,
+      clicks: savedMachineClicks,
+      sheets: savedSheetConsumption,
+    });
+    setTimeout(() => {
+      setToastMsg((curr) => (curr?.jobNumber === savedJobNumber ? null : curr));
+    }, 4500);
+
+    // 5. INSTANT AUTO-RESET FOR NEXT JOB (<1ms) - Operator can immediately type next job!
+    setGoodPrints('');
+    setWastage(0);
+    setReprint(0);
+    setWastageReasonId('');
+    setWastageReasonOther('');
+    setWastagePhotoUrl('');
+    setRemarks('');
+    setOrderedQuantity('');
+    setCustomerName('');
+    setProduct('');
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    setJobNumber(`PB-${new Date().getFullYear()}-${rand}`);
+
+    // 6. ASYNC BACKGROUND DB SYNC
+    const payload = {
+      jobNumber: savedJobNumber,
+      customerName: savedCustomerName,
+      product: savedProduct,
+      orderedQuantity: typeof orderedQuantity === 'number' ? orderedQuantity : g,
+      printType: savedPrintType,
+      paperSize: savedPaperSize,
+      printSide: savedPrintSide,
+      mediaId: savedMediaId,
+      machineId: savedMachineId,
+      goodPrints: savedGoodPrints,
+      wastage: savedWastage,
+      reprint: savedReprint,
+      reprintType: savedReprint > 0 ? reprintType : undefined,
+      wastageReasonId: savedWastage > 0 ? wastageReasonId : undefined,
+      wastageReasonOther: savedWastage > 0 && wastageReasonId === 'wr-10' ? wastageReasonOther : undefined,
+      wastagePhotoUrl: wastagePhotoUrl || undefined,
+      remarks: remarks.trim() || undefined,
+    };
+
+    try {
       const res = await fetch('/api/jobs', {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -264,24 +387,23 @@ export default function ProductionEntryPage() {
         throw new Error(data.error || 'Failed to save production entry');
       }
 
-      setSuccessResult(data.job);
-      // Immediately deduct local media stock
+      // Replace optimistic temp ID with real ID
+      if (data.job) {
+        setTodayJobs((prev) =>
+          prev.map((j) => (j.id === tempId ? { ...data.job, isOptimistic: false } : j))
+        );
+      }
+    } catch (err: any) {
+      // Rollback on server error
+      setTodayJobs((prev) => prev.filter((j) => j.id !== tempId));
       setMediaList((prev) =>
         prev.map((m) =>
-          m.id === selectedMediaId
-            ? { ...m, currentStock: Math.max(0, m.currentStock - liveCalc.sheetConsumption) }
+          m.id === savedMediaId
+            ? { ...m, currentStock: m.currentStock + savedSheetConsumption }
             : m
         )
       );
-
-      // Prepend to today's jobs table immediately
-      if (data.job) {
-        setTodayJobs((prev) => [data.job, ...prev]);
-      }
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Error occurred');
-    } finally {
-      setSubmitting(false);
+      setErrorMsg(`Failed to save Job #${savedJobNumber}: ${err.message}`);
     }
   };
 
@@ -373,53 +495,32 @@ export default function ProductionEntryPage() {
         </div>
       </div>
 
-      {/* Success Confirmation Card */}
-      {successResult && (
-        <div className="bg-yellow-50 border border-yellow-300 rounded-2xl p-6 text-slate-950 shadow-md animate-fade-in">
-          <div className="flex items-start space-x-3">
-            <CheckCircle2 className="w-6 h-6 text-yellow-600 mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <h2 className="text-base font-black text-slate-950">
-                Production Entry Saved Successfully!
-              </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 bg-white p-3.5 rounded-xl border border-yellow-300 text-xs">
-                <div>
-                  <span className="text-slate-500 font-medium block">Job Number:</span>
-                  <span className="font-extrabold text-slate-900 text-sm">{successResult.jobNumber}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 font-medium block">Customer:</span>
-                  <span className="font-bold text-slate-900">{successResult.customerName}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 font-medium block">Sheets Consumed:</span>
-                  <span className="font-extrabold text-slate-900 text-sm">{successResult.sheetConsumption} sheets</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 font-medium block">Clicks Generated:</span>
-                  <span className="font-extrabold text-yellow-800 text-sm">{successResult.machineClicks} clicks</span>
-                </div>
+      {/* Instant Success Toast Banner */}
+      {toastMsg && (
+        <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-4 text-emerald-950 shadow-md flex items-center justify-between animate-fade-in">
+          <div className="flex items-center space-x-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center flex-shrink-0 font-black text-sm shadow-xs">
+              ✓
+            </div>
+            <div>
+              <div className="text-sm font-black text-emerald-950 flex items-center gap-2">
+                <span>⚡ {toastMsg.jobNumber} Saved Instantly!</span>
+                <span className="text-[11px] font-extrabold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full">
+                  Customer: {toastMsg.customer}
+                </span>
               </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={handleResetForNext}
-                  className="px-4 py-2 bg-slate-950 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center space-x-1.5"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-yellow-400" />
-                  <span>Enter Next Job</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => router.push('/')}
-                  className="px-4 py-2 bg-yellow-400 hover:bg-yellow-500 text-slate-950 text-xs font-black rounded-xl transition"
-                >
-                  Go to Dashboard
-                </button>
-              </div>
+              <p className="text-xs text-emerald-800 font-semibold mt-0.5">
+                {toastMsg.sheets} sheets deducted from stock • {toastMsg.clicks} machine clicks logged. Form ready for next entry!
+              </p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setToastMsg(null)}
+            className="p-1.5 text-emerald-600 hover:text-emerald-900 rounded-lg hover:bg-emerald-100 transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
