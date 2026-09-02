@@ -23,7 +23,7 @@ import {
   Check,
   Search,
 } from 'lucide-react';
-import { calculateJobProduction, PrintSide, PaperSize, PrintType } from '@/lib/calculations';
+import { calculateJobProduction, resolvePrintRate, PrintSide, PaperSize, PrintType } from '@/lib/calculations';
 
 export default function ProductionEntryPage() {
   const { user, token, loading: authLoading, isOwner } = useAuth();
@@ -45,6 +45,7 @@ export default function ProductionEntryPage() {
   const [orderedQuantity, setOrderedQuantity] = useState<number | ''>('');
   const [printType, setPrintType] = useState<PrintType>('COLOUR');
   const [paperSize, setPaperSize] = useState<PaperSize>('A4');
+  const [selectedTier, setSelectedTier] = useState<'TIER1' | 'TIER2'>('TIER1');
   const [printSide, setPrintSide] = useState<PrintSide>('SINGLE');
   const [selectedMachineId, setSelectedMachineId] = useState('');
   const [selectedMediaId, setSelectedMediaId] = useState('');
@@ -187,15 +188,15 @@ export default function ProductionEntryPage() {
     }
   }, [user]);
 
-  // Find active rate
-  const activeRate = rates.find(
-    (r) =>
-      r.machineId === selectedMachineId &&
-      r.paperSize === paperSize &&
-      r.printType === printType
-  );
-  const unitRateVal = activeRate ? activeRate.rate : (paperSize === 'A3' ? (printType === 'COLOUR' ? 4.25 : 1.10) : (printType === 'COLOUR' ? 2.90 : 1.10));
-  const gstPercentVal = activeRate?.gstPercent !== undefined ? activeRate.gstPercent : 18.0;
+  // Official Machine Billing Contract Tariff Resolution
+  const rateInfo = resolvePrintRate({
+    paperSize,
+    printType,
+    selectedTier,
+    dbRates: rates,
+  });
+  const unitRateVal = rateInfo.rate;
+  const gstPercentVal = rateInfo.gstPercent;
 
   // Live calculations
   const g = typeof goodPrints === 'number' ? goodPrints : 0;
@@ -283,11 +284,13 @@ export default function ProductionEntryPage() {
     const savedReprint = rep;
     const savedPrintType = printType;
     const savedPaperSize = paperSize;
+    const savedSelectedTier = selectedTier;
     const savedPrintSide = printSide;
     const savedMediaId = selectedMediaId;
     const savedMachineId = selectedMachineId;
     const savedSheetConsumption = liveCalc.sheetConsumption;
     const savedMachineClicks = liveCalc.machineClicks;
+    const savedUnitRate = unitRateVal;
     const savedGrandTotal = liveCalc.grandTotalCost;
     const savedMediaName = selectedMedia ? `${selectedMedia.gsm} GSM ${selectedMedia.name} (${selectedMedia.size})` : 'Media';
     const tempId = 'temp-' + Date.now();
@@ -362,6 +365,8 @@ export default function ProductionEntryPage() {
       orderedQuantity: typeof orderedQuantity === 'number' ? orderedQuantity : g,
       printType: savedPrintType,
       paperSize: savedPaperSize,
+      selectedTier: savedSelectedTier,
+      unitRate: savedUnitRate,
       printSide: savedPrintSide,
       mediaId: savedMediaId,
       machineId: savedMachineId,
@@ -622,99 +627,171 @@ export default function ProductionEntryPage() {
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {/* Print Type */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Print Colour Mode
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPrintType('COLOUR')}
-                    className={`py-2 text-xs font-bold rounded-xl border transition ${
-                      printType === 'COLOUR'
-                        ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Colour
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPrintType('BW')}
-                    className={`py-2 text-xs font-bold rounded-xl border transition ${
-                      printType === 'BW'
-                        ? 'bg-slate-950 text-white border-slate-950 shadow-xs'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    B&amp;W
-                  </button>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Print Colour Mode */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Print Colour Mode
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPrintType('COLOUR')}
+                      className={`py-2 text-xs font-black rounded-xl border transition ${
+                        printType === 'COLOUR'
+                          ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs ring-1 ring-yellow-500'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      🌈 Colour
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrintType('BW')}
+                      className={`py-2 text-xs font-black rounded-xl border transition ${
+                        printType === 'BW'
+                          ? 'bg-slate-950 text-white border-slate-950 shadow-xs ring-1 ring-slate-800'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      ⚫ B&amp;W (₹1.10)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Print Side */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Print Sides (Clicks Multiplier)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPrintSide('SINGLE')}
+                      className={`py-2 text-xs font-black rounded-xl border transition ${
+                        printSide === 'SINGLE'
+                          ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs ring-1 ring-yellow-500'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      Single (1 Click)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrintSide('DOUBLE')}
+                      className={`py-2 text-xs font-black rounded-xl border transition ${
+                        printSide === 'DOUBLE'
+                          ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs ring-1 ring-yellow-500'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      Double (2 Clicks)
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Paper Size */}
+              {/* Print Format / Click Size Tier */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Click Size Tier
-                </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Print Format / Click Size Tier
+                  </label>
+                  <span className="text-[11px] font-black text-slate-900 bg-yellow-100 border border-yellow-300 px-2 py-0.5 rounded-md">
+                    Applied: ₹{unitRateVal.toFixed(2)} + {gstPercentVal}% GST
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <button
                     type="button"
                     onClick={() => setPaperSize('A4')}
-                    className={`py-2 text-xs font-bold rounded-xl border transition ${
+                    className={`py-2.5 px-3 rounded-xl border transition text-left flex flex-col justify-between ${
                       paperSize === 'A4'
-                        ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        ? 'bg-yellow-400 text-slate-950 border-yellow-500 shadow-xs ring-1 ring-yellow-500'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    A4
+                    <span className="font-extrabold text-xs block">A4 Size</span>
+                    <span className="text-[10px] font-bold mt-1 opacity-85">
+                      {printType === 'COLOUR' ? '₹2.90 + 18% GST' : '₹1.10 + 18% GST'}
+                    </span>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => setPaperSize('A3')}
-                    className={`py-2 text-xs font-bold rounded-xl border transition ${
+                    className={`py-2.5 px-3 rounded-xl border transition text-left flex flex-col justify-between ${
                       paperSize === 'A3'
-                        ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        ? 'bg-yellow-400 text-slate-950 border-yellow-500 shadow-xs ring-1 ring-yellow-500'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    A3 / 12x18 / 13x19
+                    <span className="font-extrabold text-xs block">A3 / 12x18 / 13x19</span>
+                    <span className="text-[10px] font-bold mt-1 opacity-85">
+                      {printType === 'COLOUR'
+                        ? (selectedTier === 'TIER2' ? '₹4.15 (10,001+)' : '₹4.25 (1-10k)')
+                        : '₹1.10 + 18% GST'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaperSize('BANNER')}
+                    className={`py-2.5 px-3 rounded-xl border transition text-left flex flex-col justify-between ${
+                      paperSize === 'BANNER'
+                        ? 'bg-yellow-400 text-slate-950 border-yellow-500 shadow-xs ring-1 ring-yellow-500'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className="font-extrabold text-xs block">BANNER (13x26+)</span>
+                    <span className="text-[10px] font-bold mt-1 opacity-85">
+                      {printType === 'COLOUR' ? '₹6.40 + 18% GST' : '₹2.20 + 18% GST'}
+                    </span>
                   </button>
                 </div>
               </div>
 
-              {/* Print Side */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Print Sides (Clicks Mult)
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPrintSide('SINGLE')}
-                    className={`py-2 text-xs font-bold rounded-xl border transition ${
-                      printSide === 'SINGLE'
-                        ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Single (1x)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPrintSide('DOUBLE')}
-                    className={`py-2 text-xs font-bold rounded-xl border transition ${
-                      printSide === 'DOUBLE'
-                        ? 'bg-yellow-400 text-slate-950 border-yellow-400 shadow-xs'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Double (2x)
-                  </button>
+              {/* A3 Colour Machine Billing Slab Selector */}
+              {paperSize === 'A3' && printType === 'COLOUR' && (
+                <div className="bg-amber-50/80 border border-amber-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+                  <div>
+                    <div className="text-xs font-black text-amber-950 flex items-center space-x-1.5">
+                      <span>⚡ Machine Billing Contract Slab:</span>
+                      <span className="text-[10px] font-extrabold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
+                        {selectedTier === 'TIER2' ? 'Active: Volume Discount' : 'Active: Standard Slab'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 mt-0.5">
+                      1 to 10,000 prints @ ₹4.25 • Above 10,001 prints @ ₹4.15 (+18% GST)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTier('TIER1')}
+                      className={`px-3 py-1.5 text-xs font-black rounded-lg transition border ${
+                        selectedTier === 'TIER1'
+                          ? 'bg-yellow-400 text-slate-950 border-yellow-500 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      1 – 10,000 (₹4.25)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTier('TIER2')}
+                      className={`px-3 py-1.5 text-xs font-black rounded-lg transition border ${
+                        selectedTier === 'TIER2'
+                          ? 'bg-yellow-400 text-slate-950 border-yellow-500 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      10,001+ (₹4.15)
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Media Selector */}
@@ -915,37 +992,39 @@ export default function ProductionEntryPage() {
                 )}
               </div>
 
-              {/* Cost Calculation (OWNER ONLY) */}
-              {isOwner && (
-                <div className="pt-2 border-t border-white/10 space-y-1.5">
-                  <div className="flex items-center justify-between text-slate-400">
-                    <span>Base Print Rate:</span>
-                    <span className="font-semibold text-white">₹{liveCalc.unitCost} / click</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-400">
-                    <span>Base Cost:</span>
-                    <span className="font-semibold text-white">₹{liveCalc.totalCost}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-400">
-                    <span>GST (18%):</span>
-                    <span className="font-semibold text-white">₹{liveCalc.gstAmount}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-yellow-400 font-extrabold text-sm pt-2 border-t border-white/10">
-                    <span>Grand Total Cost:</span>
-                    <span>₹{liveCalc.grandTotalCost}</span>
-                  </div>
+              {/* Cost Calculation */}
+              <div className="pt-2 border-t border-white/10 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>Active Tariff:</span>
+                  <span className="font-bold text-yellow-400 text-right max-w-[180px] truncate">{rateInfo.tierLabel}</span>
                 </div>
-              )}
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>Billing Rate:</span>
+                  <span className="font-semibold text-white">₹{liveCalc.unitCost.toFixed(2)} / click</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>Base Cost ({liveCalc.machineClicks} clicks):</span>
+                  <span className="font-semibold text-white">₹{liveCalc.totalCost.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>GST ({liveCalc.unitCost > 0 ? '18%' : '0%'}):</span>
+                  <span className="font-semibold text-white">₹{liveCalc.gstAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between text-yellow-400 font-extrabold text-sm pt-2 border-t border-white/10">
+                  <span>Grand Total Cost:</span>
+                  <span>₹{liveCalc.grandTotalCost.toFixed(2)}</span>
+                </div>
+              </div>
             </div>
 
             {/* Submit Button */}
             <button
               type="submit"
               disabled={submitting || !isStockAvailable}
-              className="w-full py-3.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-yellow-400/25 flex items-center justify-center space-x-2 transition transform active:scale-[0.99] disabled:opacity-50"
+              className="w-full py-3.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-yellow-400/25 flex items-center justify-center space-x-2 transition transform active:scale-[0.98] disabled:opacity-50"
             >
               <FileCheck className="w-4 h-4 text-slate-950 stroke-[2.5]" />
-              <span>{submitting ? 'Saving Production...' : 'Save Production Job'}</span>
+              <span>⚡ Save Production Job (Instant)</span>
             </button>
           </div>
         </div>

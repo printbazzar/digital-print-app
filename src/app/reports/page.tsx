@@ -232,8 +232,9 @@ export default function ReportsPage() {
             className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none"
           >
             <option value="">All Sizes</option>
-            <option value="A4">A4</option>
+            <option value="A4">A4 Size</option>
             <option value="A3">A3 / 12x18 / 13x19</option>
+            <option value="BANNER">BANNER (13x26+)</option>
           </select>
         </div>
       </div>

@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
 
   let totalA4Clicks = 0;
   let totalA3Clicks = 0;
+  let totalBannerClicks = 0;
 
   let totalSingleSideSheets = 0;
   let totalDoubleSideSheets = 0;
@@ -74,8 +75,10 @@ export async function GET(request: NextRequest) {
 
     if (job.paperSize === 'A4') {
       totalA4Clicks += job.machineClicks;
-    } else {
+    } else if (job.paperSize === 'A3') {
       totalA3Clicks += job.machineClicks;
+    } else {
+      totalBannerClicks += job.machineClicks;
     }
 
     if (job.printSide === 'SINGLE') {
@@ -147,6 +150,7 @@ export async function GET(request: NextRequest) {
       totalBWClicks,
       totalA4Clicks,
       totalA3Clicks,
+      totalBannerClicks,
       totalSingleSideSheets,
       totalDoubleSideSheets,
       totalCost: Math.round(totalCost * 100) / 100,

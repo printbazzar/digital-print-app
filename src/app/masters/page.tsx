@@ -40,6 +40,7 @@ export default function MastersPage() {
   // Editing state for Rates
   const [editingRateId, setEditingRateId] = useState<string | null>(null);
   const [rateEditVal, setRateEditVal] = useState<number | ''>('');
+  const [tier2EditVal, setTier2EditVal] = useState<number | ''>('');
   const [rateGstVal, setRateGstVal] = useState<number | ''>(18.0);
 
   // New Media Form state
@@ -115,6 +116,7 @@ export default function MastersPage() {
         body: JSON.stringify({
           id: rateId,
           rate: Number(rateEditVal),
+          tier2Rate: tier2EditVal !== '' ? Number(tier2EditVal) : undefined,
           gstPercent: Number(rateGstVal) || 18.0,
         }),
       });
@@ -340,12 +342,27 @@ export default function MastersPage() {
                 {rates.map((r) => {
                   const isEditing = editingRateId === r.id;
                   const rateVal = isEditing ? Number(rateEditVal) || 0 : Number(r.rate);
+                  const tier2Val = isEditing ? (tier2EditVal !== '' ? Number(tier2EditVal) : rateVal) : Number(r.tier2Rate || r.rate);
                   const gstVal = isEditing ? Number(rateGstVal) || 18.0 : Number(r.gstPercent);
                   const effective = Math.round(rateVal * (1 + gstVal / 100) * 100) / 100;
+                  const effectiveTier2 = Math.round(tier2Val * (1 + gstVal / 100) * 100) / 100;
+
+                  const isA3Colour = r.paperSize === 'A3' && r.printType === 'COLOUR';
+
+                  let sizeLabel = r.paperSize;
+                  if (r.paperSize === 'A3') sizeLabel = 'A3 / 12x18 / 13x19';
+                  if (r.paperSize === 'BANNER') sizeLabel = 'BANNER (13x26+)';
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/80 transition">
-                      <td className="py-3.5 px-4 font-bold text-slate-900">{r.paperSize}</td>
+                      <td className="py-3.5 px-4">
+                        <span className="font-extrabold text-slate-900 block">{sizeLabel}</span>
+                        {isA3Colour && (
+                          <span className="text-[10px] text-amber-700 font-bold bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                            ⚡ Multi-Slab Tariff
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3.5 px-4">
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -354,25 +371,52 @@ export default function MastersPage() {
                               : 'bg-slate-100 text-slate-800'
                           }`}
                         >
-                          {r.printType}
+                          {r.printType === 'COLOUR' ? '🌈 COLOUR' : '⚫ B&W'}
                         </span>
                       </td>
                       <td className="py-3.5 px-4">
                         {isEditing ? (
-                          <div className="flex items-center space-x-1">
-                            <span>₹</span>
-                            <input
-                              type="number"
-                              step="0.05"
-                              value={rateEditVal}
-                              onChange={(e) =>
-                                setRateEditVal(e.target.value === '' ? '' : parseFloat(e.target.value))
-                              }
-                              className="w-24 px-2 py-1 bg-white border border-yellow-400 rounded-lg text-xs font-black text-slate-900 focus:outline-none"
-                            />
+                          <div className="space-y-1.5">
+                            <div className="flex items-center space-x-1">
+                              <span className="text-[11px] text-slate-400 font-bold">{isA3Colour ? 'Tier 1 (≤10k): ₹' : '₹'}</span>
+                              <input
+                                type="number"
+                                step="0.05"
+                                value={rateEditVal}
+                                onChange={(e) =>
+                                  setRateEditVal(e.target.value === '' ? '' : parseFloat(e.target.value))
+                                }
+                                className="w-20 px-2 py-1 bg-white border border-yellow-400 rounded-lg text-xs font-black text-slate-900 focus:outline-none"
+                              />
+                            </div>
+                            {isA3Colour && (
+                              <div className="flex items-center space-x-1">
+                                <span className="text-[11px] text-slate-400 font-bold">Tier 2 (&gt;10k): ₹</span>
+                                <input
+                                  type="number"
+                                  step="0.05"
+                                  value={tier2EditVal}
+                                  onChange={(e) =>
+                                    setTier2EditVal(e.target.value === '' ? '' : parseFloat(e.target.value))
+                                  }
+                                  className="w-20 px-2 py-1 bg-white border border-yellow-400 rounded-lg text-xs font-black text-slate-900 focus:outline-none"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        ) : isA3Colour ? (
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                              <span>1 – 10,000 counts:</span>
+                              <span className="font-black text-slate-950">₹{Number(r.rate).toFixed(2)}</span>
+                            </div>
+                            <div className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1.5">
+                              <span>10,001+ counts:</span>
+                              <span className="font-black">₹{Number(r.tier2Rate || 4.15).toFixed(2)}</span>
+                            </div>
                           </div>
                         ) : (
-                          <span className="font-bold text-slate-900">₹{r.rate.toFixed(2)}</span>
+                          <span className="font-bold text-slate-900">₹{Number(r.rate).toFixed(2)}</span>
                         )}
                       </td>
                       <td className="py-3.5 px-4">
@@ -394,7 +438,18 @@ export default function MastersPage() {
                         )}
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="font-black text-yellow-800">₹{effective.toFixed(2)}</span>
+                        {isA3Colour ? (
+                          <div className="space-y-0.5">
+                            <div className="font-black text-yellow-800">
+                              ₹{effective.toFixed(2)} <span className="text-[10px] font-normal text-slate-500">(Tier 1)</span>
+                            </div>
+                            <div className="font-black text-emerald-800 text-[11px]">
+                              ₹{effectiveTier2.toFixed(2)} <span className="text-[10px] font-normal text-slate-500">(Tier 2)</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="font-black text-yellow-800">₹{effective.toFixed(2)}</span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         {isEditing ? (
@@ -418,6 +473,7 @@ export default function MastersPage() {
                             onClick={() => {
                               setEditingRateId(r.id);
                               setRateEditVal(r.rate);
+                              setTier2EditVal(r.tier2Rate !== undefined && r.tier2Rate !== null ? r.tier2Rate : r.rate);
                               setRateGstVal(r.gstPercent);
                             }}
                             className="px-2.5 py-1 bg-slate-100 hover:bg-yellow-400 text-slate-900 text-xs font-bold rounded-lg transition"

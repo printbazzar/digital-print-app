@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import {
   calculateJobProduction,
   reconcileMachineCounter,
+  resolvePrintRate,
   PrintSide,
   PaperSize,
   PrintType,
@@ -259,6 +260,8 @@ export const db = {
         return list.map((r) => ({
           ...r,
           rate: Number(r.rate),
+          tier2Rate: r.tier2Rate !== null && r.tier2Rate !== undefined ? Number(r.tier2Rate) : Number(r.rate),
+          tierThreshold: r.tierThreshold,
           gstPercent: Number(r.gstPercent),
           createdAt: r.createdAt.toISOString(),
           updatedAt: r.updatedAt.toISOString(),
@@ -266,6 +269,9 @@ export const db = {
       } catch {
         return INITIAL_RATES.map((r) => ({
           ...r,
+          rate: Number(r.rate),
+          tier2Rate: r.tier2Rate ? Number(r.tier2Rate) : Number(r.rate),
+          tierThreshold: r.tierThreshold,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }));
@@ -285,6 +291,8 @@ export const db = {
         return r ? {
           ...r,
           rate: Number(r.rate),
+          tier2Rate: r.tier2Rate !== null && r.tier2Rate !== undefined ? Number(r.tier2Rate) : Number(r.rate),
+          tierThreshold: r.tierThreshold,
           gstPercent: Number(r.gstPercent),
           createdAt: r.createdAt.toISOString(),
           updatedAt: r.updatedAt.toISOString(),
@@ -293,18 +301,22 @@ export const db = {
         return undefined;
       }
     },
-    update: async (id: string, rate: number, gstPercent?: number) => {
+    update: async (id: string, rate: number, gstPercent?: number, tier2Rate?: number, tierThreshold?: number) => {
       try {
         const updated = await prisma.printRate.update({
           where: { id },
           data: {
             rate,
+            tier2Rate: tier2Rate !== undefined ? tier2Rate : undefined,
+            tierThreshold: tierThreshold !== undefined ? tierThreshold : undefined,
             gstPercent: gstPercent !== undefined ? gstPercent : undefined,
           },
         });
         return {
           ...updated,
           rate: Number(updated.rate),
+          tier2Rate: updated.tier2Rate !== null && updated.tier2Rate !== undefined ? Number(updated.tier2Rate) : Number(updated.rate),
+          tierThreshold: updated.tierThreshold,
           gstPercent: Number(updated.gstPercent),
           createdAt: updated.createdAt.toISOString(),
           updatedAt: updated.updatedAt.toISOString(),
@@ -615,8 +627,22 @@ export const db = {
         if (firstUser) validOperatorId = firstUser.id;
       }
 
-      const unitRateVal = rate ? Number(rate.rate) : (params.paperSize === 'A3' ? (params.printType === 'COLOUR' ? 4.25 : 1.10) : (params.printType === 'COLOUR' ? 2.90 : 1.10));
-      const gstVal = rate ? Number(rate.gstPercent) : 18.0;
+      const resolvedRate = resolvePrintRate({
+        paperSize: params.paperSize,
+        printType: params.printType,
+        selectedTier: params.selectedTier,
+        dbRates: rate ? [{
+          paperSize: rate.paperSize,
+          printType: rate.printType,
+          rate: Number(rate.rate),
+          tier2Rate: rate.tier2Rate ? Number(rate.tier2Rate) : Number(rate.rate),
+          tierThreshold: rate.tierThreshold,
+          gstPercent: Number(rate.gstPercent),
+        }] : undefined,
+      });
+
+      const unitRateVal = params.unitRate !== undefined ? Number(params.unitRate) : resolvedRate.rate;
+      const gstVal = rate ? Number(rate.gstPercent) : resolvedRate.gstPercent;
 
       const calc = calculateJobProduction({
         goodPrints: params.goodPrints,

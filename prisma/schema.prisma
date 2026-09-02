@@ -24,6 +24,7 @@ enum PrintType {
 enum PaperSize {
   A4
   A3
+  BANNER
 }
 
 enum PrintSide {
@@ -77,16 +78,18 @@ model Machine {
 }
 
 model PrintRate {
-  id         String    @id @default(uuid())
-  machineId  String
-  machine    Machine   @relation(fields: [machineId], references: [id], onDelete: Cascade)
-  paperSize  PaperSize
-  printType  PrintType
-  rate       Decimal   @db.Decimal(10, 2)
-  gstPercent Decimal   @default(18.0) @db.Decimal(5, 2)
-  isActive   Boolean   @default(true)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id            String    @id @default(uuid())
+  machineId     String
+  machine       Machine   @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  paperSize     PaperSize
+  printType     PrintType
+  rate          Decimal   @db.Decimal(10, 2)
+  tier2Rate     Decimal?  @default(4.15) @db.Decimal(10, 2)
+  tierThreshold Int?      @default(10000)
+  gstPercent    Decimal   @default(18.0) @db.Decimal(5, 2)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@unique([machineId, paperSize, printType])
   @@map("print_rates")

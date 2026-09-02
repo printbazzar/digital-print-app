@@ -19,13 +19,19 @@ async function handleUpdateRate(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { id, rate, gstPercent } = body;
+    const { id, rate, gstPercent, tier2Rate, tierThreshold } = body;
 
     if (!id || rate === undefined) {
       return NextResponse.json({ error: 'Rate ID and rate are required' }, { status: 400 });
     }
 
-    const updated = await db.rates.update(id, Number(rate), gstPercent !== undefined ? Number(gstPercent) : undefined);
+    const updated = await db.rates.update(
+      id,
+      Number(rate),
+      gstPercent !== undefined ? Number(gstPercent) : undefined,
+      tier2Rate !== undefined ? Number(tier2Rate) : undefined,
+      tierThreshold !== undefined ? Number(tierThreshold) : undefined
+    );
     if (!updated) return NextResponse.json({ error: 'Print rate not found' }, { status: 404 });
 
     return NextResponse.json({ success: true, rate: updated });
