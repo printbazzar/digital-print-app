@@ -101,6 +101,7 @@ model Media {
   gsm               Int                 // e.g. 300, 100, 250
   size              String              // e.g. "13x19", "12x18", "A4", "A3"
   brand             String?             // e.g. "Century", "Bilt", "Generic"
+  costPerSheet      Decimal             @default(0.00) @db.Decimal(10, 2) // purchase cost per sheet in INR
   currentStock      Int                 @default(0) // in physical sheets
   minimumStockLevel Int                 @default(100)
   unit              String              @default("sheets")

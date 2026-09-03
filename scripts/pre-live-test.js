@@ -125,6 +125,13 @@ async function runPreLiveTests() {
     const mediaRes = await fetch(`${BASE_URL}/api/media`, { headers: ownerHeaders });
     const mediaData = await mediaRes.json();
     assert(mediaRes.ok && Array.isArray(mediaData.media) && mediaData.media.length > 0, 'Media Catalog Listing', `Total Media Items: ${mediaData.media.length}`);
+    
+    // 3.2 Material Cost & Overall Inventory Valuation Verification
+    const hasCostPerSheet = mediaData.media.every(m => typeof m.costPerSheet === 'number' && m.costPerSheet >= 0);
+    assert(hasCostPerSheet, 'Media Material Cost Per Sheet Verification', `Benchmark costs present for all ${mediaData.media.length} items`);
+    const totalStockValuation = mediaData.media.reduce((acc, m) => acc + (m.currentStock * (m.costPerSheet || 0)), 0);
+    assert(totalStockValuation > 0, 'Overall Inventory Stock Valuation Calculation', `Total Stock in Hand Value: ₹${totalStockValuation.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
+
     const targetMedia = mediaData.media[0];
     const initialStock = targetMedia.currentStock;
 

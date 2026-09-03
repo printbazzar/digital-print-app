@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   Gauge,
   CheckCircle2,
@@ -17,6 +18,12 @@ import {
   FileCheck,
   Edit2,
   Unlock,
+  Boxes,
+  DollarSign,
+  Search,
+  Layers,
+  ExternalLink,
+  Coins,
 } from 'lucide-react';
 import { reconcileMachineCounter } from '@/lib/calculations';
 
@@ -26,6 +33,9 @@ export default function DailyClosingPage() {
 
   const [counterData, setCounterData] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const [mediaList, setMediaList] = useState<any[]>([]);
+  const [stockSearchTerm, setStockSearchTerm] = useState('');
+  const [stockFilter, setStockFilter] = useState<'ALL' | 'LOW'>('ALL');
   const [closingInput, setClosingInput] = useState<number | ''>('');
   const [mismatchReason, setMismatchReason] = useState('');
   const [loading, setLoading] = useState(true);
@@ -38,9 +48,10 @@ export default function DailyClosingPage() {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [todayRes, histRes] = await Promise.all([
+      const [todayRes, histRes, mediaRes] = await Promise.all([
         fetch('/api/counters/today'),
         fetch('/api/counters/history'),
+        fetch('/api/media'),
       ]);
 
       if (todayRes.ok) {
@@ -62,6 +73,11 @@ export default function DailyClosingPage() {
       if (histRes.ok) {
         const h = await histRes.json();
         setHistory(h.history || []);
+      }
+
+      if (mediaRes.ok) {
+        const mData = await mediaRes.json();
+        setMediaList(mData.media || []);
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to load machine counter data.');
@@ -88,6 +104,27 @@ export default function DailyClosingPage() {
     openingCounter: opening,
     closingCounter: closingVal,
     totalJobClicks: jobClicks,
+  });
+
+  // Stock calculations for closing time inspection
+  const totalPhysicalSheets = mediaList.reduce((acc, m) => acc + (m.currentStock || 0), 0);
+  const totalStockValue = mediaList.reduce(
+    (acc, m) => acc + ((m.currentStock || 0) * (Number(m.costPerSheet) || 0)),
+    0
+  );
+  const lowStockCount = mediaList.filter((m) => m.currentStock <= m.minimumStockLevel).length;
+
+  const filteredStockMedia = mediaList.filter((m) => {
+    const matchesSearch = stockSearchTerm
+      ? m.name.toLowerCase().includes(stockSearchTerm.toLowerCase()) ||
+        m.size.toLowerCase().includes(stockSearchTerm.toLowerCase()) ||
+        m.brand?.toLowerCase().includes(stockSearchTerm.toLowerCase()) ||
+        m.gsm.toString().includes(stockSearchTerm)
+      : true;
+
+    if (!matchesSearch) return false;
+    if (stockFilter === 'LOW') return m.currentStock <= m.minimumStockLevel;
+    return true;
   });
 
   const handleCloseDay = async (e: React.FormEvent) => {
@@ -412,6 +449,184 @@ export default function DailyClosingPage() {
             </div>
           )}
         </form>
+      </div>
+
+      {/* End-of-Day Inventory Stock Count & Material Valuation Verification */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        {/* Section Header Strip */}
+        <div className="p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-gradient-to-r from-slate-900 to-slate-950 text-white">
+          <div className="flex items-center space-x-3.5">
+            <div className="p-2.5 bg-yellow-400 text-slate-950 rounded-xl font-bold">
+              <Boxes className="w-5 h-5 stroke-[2.5]" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-sm font-black text-white">
+                  Closing Time Inventory Stock &amp; Valuation Check
+                </h2>
+                <span className="px-2 py-0.5 text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 rounded-full">
+                  Material In Hand
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 font-medium">
+                Verify physical paper sheet count and total material asset valuation before day close
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/inventory"
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-yellow-400 text-xs font-bold rounded-xl transition border border-white/15 self-start md:self-auto"
+          >
+            <span>Open Stock Console</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {/* 3 Metric Badges */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 bg-slate-50/50 border-b border-slate-200">
+          <div className="p-4 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Overall Stock Valuation</span>
+              <div className="text-xl font-black text-emerald-700 font-mono mt-0.5">
+                ₹{totalStockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium">Total material cost in hand</span>
+            </div>
+            <div className="p-2.5 bg-emerald-100/60 text-emerald-800 rounded-xl font-bold">
+              <DollarSign className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="p-4 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Sheets In Stock</span>
+              <div className="text-xl font-black text-slate-900 font-mono mt-0.5">
+                {totalPhysicalSheets.toLocaleString()} Sheets
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium">Across {mediaList.length} media catalog types</span>
+            </div>
+            <div className="p-2.5 bg-yellow-400/20 text-slate-950 rounded-xl font-bold">
+              <Boxes className="w-5 h-5 text-yellow-700" />
+            </div>
+          </div>
+
+          <div className="p-4 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Low Stock Safety Alerts</span>
+              <div className="text-xl font-black text-red-600 font-mono mt-0.5">
+                {lowStockCount} Items
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium">Need replenishment soon</span>
+            </div>
+            <div className="p-2.5 bg-red-100/60 text-red-700 rounded-xl font-bold">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+
+        {/* Filter & Search Bar */}
+        <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Search closing stock by paper name, GSM..."
+              value={stockSearchTerm}
+              onChange={(e) => setStockSearchTerm(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-yellow-400 font-medium"
+            />
+          </div>
+
+          <div className="flex items-center space-x-1.5">
+            <button
+              onClick={() => setStockFilter('ALL')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition ${
+                stockFilter === 'ALL'
+                  ? 'bg-slate-950 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              All Items ({mediaList.length})
+            </button>
+            <button
+              onClick={() => setStockFilter('LOW')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center space-x-1 ${
+                stockFilter === 'LOW'
+                  ? 'bg-red-600 text-white shadow-xs'
+                  : 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'
+              }`}
+            >
+              <AlertTriangle className="w-3 h-3" />
+              <span>Low Stock ({lowStockCount})</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Stock Breakdown Table */}
+        <div className="overflow-x-auto max-h-80 overflow-y-auto">
+          <table className="w-full text-left text-xs text-slate-600">
+            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 border-b border-slate-200 bg-opacity-95 backdrop-blur-xs">
+              <tr>
+                <th className="py-2.5 px-4">Paper / Media</th>
+                <th className="py-2.5 px-4">GSM</th>
+                <th className="py-2.5 px-4">Size</th>
+                <th className="py-2.5 px-4">Cost / Sheet</th>
+                <th className="py-2.5 px-4">Stock in Hand</th>
+                <th className="py-2.5 px-4">Stock Valuation</th>
+                <th className="py-2.5 px-4">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {filteredStockMedia.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-6 text-center text-slate-400">
+                    No matching paper stock items.
+                  </td>
+                </tr>
+              ) : (
+                filteredStockMedia.map((m) => {
+                  const isLow = m.currentStock <= m.minimumStockLevel;
+                  const unitCost = Number(m.costPerSheet) || 0;
+                  const rowValuation = (m.currentStock || 0) * unitCost;
+
+                  return (
+                    <tr key={m.id} className="hover:bg-slate-50/80 transition">
+                      <td className="py-2.5 px-4 font-bold text-slate-900">
+                        {m.name}
+                        <span className="text-[10px] text-slate-400 font-normal block">{m.brand || 'Generic'}</span>
+                      </td>
+                      <td className="py-2.5 px-4 font-semibold text-slate-700">{m.gsm} GSM</td>
+                      <td className="py-2.5 px-4 font-semibold text-slate-700">{m.size}</td>
+                      <td className="py-2.5 px-4 font-bold text-slate-900 font-mono">₹{unitCost.toFixed(2)}</td>
+                      <td className="py-2.5 px-4 font-mono font-bold text-slate-900">
+                        <span className={isLow ? 'text-red-600 font-black' : 'text-slate-900'}>
+                          {m.currentStock.toLocaleString()} sheets
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-4 font-mono font-black text-emerald-700">
+                        ₹{rowValuation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-2.5 px-4">
+                        {isLow ? (
+                          <span className="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 rounded-full inline-flex items-center space-x-1">
+                            <AlertTriangle className="w-3 h-3" />
+                            <span>LOW STOCK</span>
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-[10px] font-bold bg-yellow-100 text-slate-950 border border-yellow-300 rounded-full inline-flex items-center space-x-1">
+                            <CheckCircle2 className="w-3 h-3 text-yellow-600" />
+                            <span>OK</span>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Historical Daily Closings Table */}

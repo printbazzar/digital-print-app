@@ -25,6 +25,8 @@ import {
   Check,
   ListOrdered,
   ShoppingCart,
+  DollarSign,
+  Coins,
 } from 'lucide-react';
 
 const COMMON_SIZES = ['13x19', '12x18', 'A4', 'A3', '12x24', '13x40'];
@@ -55,6 +57,7 @@ export default function InventoryPage() {
   // Form states
   // 1. Restock
   const [restockQty, setRestockQty] = useState<number | ''>('');
+  const [restockCost, setRestockCost] = useState<number | ''>('');
   const [restockReason, setRestockReason] = useState('');
 
   // 2. Adjust Stock
@@ -66,6 +69,7 @@ export default function InventoryPage() {
   const [newMediaGsm, setNewMediaGsm] = useState<number | ''>(300);
   const [newMediaSize, setNewMediaSize] = useState('13x19');
   const [newMediaBrand, setNewMediaBrand] = useState('Generic');
+  const [newMediaCost, setNewMediaCost] = useState<number | ''>(4.50);
   const [newMediaStock, setNewMediaStock] = useState<number | ''>(0);
   const [newMediaMinStock, setNewMediaMinStock] = useState<number | ''>(100);
 
@@ -74,6 +78,7 @@ export default function InventoryPage() {
   const [editGsm, setEditGsm] = useState<number | ''>('');
   const [editSize, setEditSize] = useState('');
   const [editBrand, setEditBrand] = useState('');
+  const [editCost, setEditCost] = useState<number | ''>('');
   const [editMinStock, setEditMinStock] = useState<number | ''>('');
 
   const [actionLoading, setActionLoading] = useState(false);
@@ -145,6 +150,7 @@ export default function InventoryPage() {
         body: JSON.stringify({
           mediaId: selectedMedia.id,
           quantity: Number(restockQty),
+          costPerSheet: restockCost !== '' ? Number(restockCost) : undefined,
           reason: restockReason.trim() || 'Restock purchase',
         }),
       });
@@ -155,6 +161,7 @@ export default function InventoryPage() {
       setStatusMsg({ type: 'success', text: `Added +${restockQty} sheets to '${selectedMedia.name}'. New Stock: ${selectedMedia.currentStock + Number(restockQty)} sheets.` });
       setRestockModalOpen(false);
       setRestockQty('');
+      setRestockCost('');
       setRestockReason('');
       fetchInventoryData();
     } catch (err: any) {
@@ -276,6 +283,7 @@ export default function InventoryPage() {
           gsm: Number(newMediaGsm),
           size: newMediaSize.trim(),
           brand: newMediaBrand.trim() || 'Generic',
+          costPerSheet: newMediaCost !== '' ? Number(newMediaCost) : 0,
           currentStock: Number(newMediaStock) || 0,
           minimumStockLevel: Number(newMediaMinStock) || 100,
         }),
@@ -290,6 +298,7 @@ export default function InventoryPage() {
       setNewMediaGsm(300);
       setNewMediaSize('13x19');
       setNewMediaBrand('Generic');
+      setNewMediaCost(4.50);
       setNewMediaStock(0);
       setNewMediaMinStock(100);
       fetchInventoryData();
@@ -320,6 +329,7 @@ export default function InventoryPage() {
           gsm: Number(editGsm),
           size: editSize.trim(),
           brand: editBrand.trim() || 'Generic',
+          costPerSheet: editCost !== '' ? Number(editCost) : 0,
           minimumStockLevel: Number(editMinStock) || 100,
         }),
       });
@@ -344,6 +354,7 @@ export default function InventoryPage() {
     setEditGsm(m.gsm);
     setEditSize(m.size);
     setEditBrand(m.brand || 'Generic');
+    setEditCost(m.costPerSheet !== undefined && m.costPerSheet !== null ? m.costPerSheet : 0);
     setEditMinStock(m.minimumStockLevel);
     setEditMediaModalOpen(true);
   };
@@ -361,6 +372,7 @@ export default function InventoryPage() {
     setSelectedMedia(m);
     setRestockQty('');
     setRestockReason('');
+    setRestockCost(m.costPerSheet !== undefined && m.costPerSheet !== null ? m.costPerSheet : '');
     setRestockModalOpen(true);
   };
 
@@ -375,6 +387,10 @@ export default function InventoryPage() {
 
   const lowStockCount = mediaList.filter((m) => m.currentStock <= m.minimumStockLevel).length;
   const totalPhysicalSheets = mediaList.reduce((acc, m) => acc + m.currentStock, 0);
+  const totalStockValue = mediaList.reduce(
+    (acc, m) => acc + (Number(m.currentStock) || 0) * (Number(m.costPerSheet) || 0),
+    0
+  );
 
   if (authLoading) return null;
 
@@ -468,22 +484,24 @@ export default function InventoryPage() {
       )}
 
       {/* KPI Overview Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: Overall Stock Valuation */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Total Active Media
+              Overall Stock Valuation
             </span>
-            <div className="text-2xl font-black text-slate-900 mt-0.5">
-              {mediaList.length} Types
+            <div className="text-2xl font-black text-emerald-700 mt-0.5">
+              ₹{totalStockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <span className="text-[11px] text-slate-500 font-medium">Art Board, Maplitho, Stickers, etc.</span>
+            <span className="text-[11px] text-slate-500 font-medium">Value of physical sheets in hand</span>
           </div>
-          <div className="p-3 bg-slate-100 text-slate-800 rounded-2xl font-bold">
-            <Layers className="w-5 h-5" />
+          <div className="p-3 bg-emerald-50 text-emerald-700 rounded-2xl font-bold border border-emerald-200">
+            <DollarSign className="w-5 h-5 stroke-[2.5]" />
           </div>
         </div>
 
+        {/* Card 2: Total Sheets In Stock */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
@@ -499,6 +517,23 @@ export default function InventoryPage() {
           </div>
         </div>
 
+        {/* Card 3: Total Active Media */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Total Active Media
+            </span>
+            <div className="text-2xl font-black text-slate-900 mt-0.5">
+              {mediaList.length} Types
+            </div>
+            <span className="text-[11px] text-slate-500 font-medium">Art Board, Maplitho, Stickers, etc.</span>
+          </div>
+          <div className="p-3 bg-slate-100 text-slate-800 rounded-2xl font-bold">
+            <Layers className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* Card 4: Low Stock Alerts */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
@@ -549,7 +584,9 @@ export default function InventoryPage() {
                 <th className="py-3 px-4">Weight (GSM)</th>
                 <th className="py-3 px-4">Size</th>
                 <th className="py-3 px-4">Brand</th>
-                <th className="py-3 px-4">Current Stock</th>
+                <th className="py-3 px-4">Cost / Sheet</th>
+                <th className="py-3 px-4">Stock in Hand</th>
+                <th className="py-3 px-4">Stock Valuation</th>
                 <th className="py-3 px-4">Min Alert</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
@@ -558,13 +595,16 @@ export default function InventoryPage() {
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredMedia.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">
+                  <td colSpan={10} className="py-8 text-center text-slate-400">
                     No media items found matching search.
                   </td>
                 </tr>
               ) : (
                 filteredMedia.map((m) => {
                   const isLow = m.currentStock <= m.minimumStockLevel;
+                  const unitCost = Number(m.costPerSheet) || 0;
+                  const stockVal = (Number(m.currentStock) || 0) * unitCost;
+
                   return (
                     <tr key={m.id} className="hover:bg-slate-50/80 transition">
                       <td className="py-3.5 px-4 font-bold text-slate-900">
@@ -573,7 +613,7 @@ export default function InventoryPage() {
                           <button
                             onClick={() => openEditModal(m)}
                             className="text-slate-400 hover:text-slate-950 transition p-1 hover:bg-slate-200 rounded"
-                            title="Edit Name, GSM, Size, Brand"
+                            title="Edit Name, GSM, Size, Brand, Cost"
                           >
                             <Edit2 className="w-3 h-3" />
                           </button>
@@ -590,6 +630,11 @@ export default function InventoryPage() {
                       <td className="py-3.5 px-4 text-slate-500">
                         {m.brand || 'Generic'}
                       </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-900">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-900 font-mono text-[11px] font-bold">
+                          ₹{unitCost.toFixed(2)}
+                        </span>
+                      </td>
                       <td className="py-3.5 px-4">
                         <span
                           className={`font-black text-sm ${
@@ -597,6 +642,11 @@ export default function InventoryPage() {
                           }`}
                         >
                           {m.currentStock.toLocaleString()} sheets
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="font-black text-xs text-emerald-700 font-mono">
+                          ₹{stockVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-slate-400 font-semibold">
@@ -921,39 +971,70 @@ export default function InventoryPage() {
                     <tr>
                       <th className="py-2.5 px-3">Media Item</th>
                       <th className="py-2.5 px-3">Size / GSM</th>
+                      <th className="py-2.5 px-3">Cost/Sheet</th>
                       <th className="py-2.5 px-3">Current Stock</th>
-                      <th className="py-2.5 px-3 w-40">New Physical Stock</th>
+                      <th className="py-2.5 px-3 w-36">New Physical Stock</th>
+                      <th className="py-2.5 px-3 text-right">Stock Valuation</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {mediaList.map((m) => (
-                      <tr key={m.id} className="hover:bg-slate-50/80">
-                        <td className="py-2 px-3 font-bold text-slate-900">
-                          {m.name}
-                          <span className="text-[10px] text-slate-400 font-normal block">{m.brand || 'Generic'}</span>
-                        </td>
-                        <td className="py-2 px-3 font-semibold text-slate-700">
-                          {m.gsm} GSM • {m.size}
-                        </td>
-                        <td className="py-2 px-3 font-mono font-bold text-slate-700">
-                          {m.currentStock.toLocaleString()}
-                        </td>
-                        <td className="py-2 px-3">
-                          <input
-                            type="number"
-                            min="0"
-                            value={bulkStocks[m.id] !== undefined ? bulkStocks[m.id] : m.currentStock}
-                            onChange={(e) => {
-                              const val = e.target.value === '' ? 0 : parseInt(e.target.value);
-                              setBulkStocks((prev) => ({ ...prev, [m.id]: val }));
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                          />
-                        </td>
-                      </tr>
-                    ))}
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {mediaList.map((m) => {
+                      const targetVal = bulkStocks[m.id] !== undefined ? bulkStocks[m.id] : m.currentStock;
+                      const unitCost = Number(m.costPerSheet) || 0;
+                      const rowVal = targetVal * unitCost;
+
+                      return (
+                        <tr key={m.id} className="hover:bg-slate-50/80">
+                          <td className="py-2 px-3 font-bold text-slate-900">
+                            {m.name}
+                            <span className="text-[10px] text-slate-400 font-normal block">{m.brand || 'Generic'}</span>
+                          </td>
+                          <td className="py-2 px-3 font-semibold text-slate-700">
+                            {m.gsm} GSM • {m.size}
+                          </td>
+                          <td className="py-2 px-3 font-bold text-slate-800">
+                            ₹{unitCost.toFixed(2)}
+                          </td>
+                          <td className="py-2 px-3 font-mono text-slate-500">
+                            {m.currentStock.toLocaleString()}
+                          </td>
+                          <td className="py-2 px-3">
+                            <input
+                              type="number"
+                              min="0"
+                              value={targetVal}
+                              onChange={(e) => {
+                                const val = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                setBulkStocks((prev) => ({ ...prev, [m.id]: val }));
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                            />
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">
+                            ₹{rowVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Live Bulk Valuation Summary Strip */}
+              <div className="p-3 bg-slate-950 text-white rounded-xl flex items-center justify-between text-xs">
+                <div className="flex items-center space-x-2">
+                  <Coins className="w-4 h-4 text-yellow-400" />
+                  <span className="text-slate-400 font-bold">Total Physical Sheets:</span>
+                  <span className="font-mono font-black text-white">
+                    {mediaList.reduce((acc, m) => acc + (bulkStocks[m.id] !== undefined ? bulkStocks[m.id] : m.currentStock), 0).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-slate-400 font-bold">Total Audit Valuation:</span>
+                  <span className="font-mono font-black text-emerald-400 text-sm">
+                    ₹{mediaList.reduce((acc, m) => acc + ((bulkStocks[m.id] !== undefined ? bulkStocks[m.id] : m.currentStock) * (Number(m.costPerSheet) || 0)), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
 
               <div className="pt-3 flex items-center justify-end space-x-3">
@@ -1060,6 +1141,29 @@ export default function InventoryPage() {
                     <span>New Stock after purchase:</span>
                     <span className="font-black text-sm text-slate-950">
                       {selectedMedia.currentStock + Number(restockQty)} sheets
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  Purchase Cost / Sheet (₹)
+                </label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  value={restockCost}
+                  onChange={(e) => setRestockCost(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                  placeholder="e.g. 4.50"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                />
+                {restockQty !== '' && restockCost !== '' && Number(restockQty) > 0 && Number(restockCost) > 0 && (
+                  <div className="text-[11px] font-bold text-emerald-800 mt-1.5 p-2 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between">
+                    <span>Batch Purchase Invoice Value:</span>
+                    <span className="font-mono font-black text-sm text-emerald-900">
+                      ₹{(Number(restockQty) * Number(restockCost)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 )}
@@ -1232,10 +1336,26 @@ export default function InventoryPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-2.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">
-                    Initial Stock (Sheets)
+                    Cost/Sheet (₹) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    required
+                    value={newMediaCost}
+                    onChange={(e) => setNewMediaCost(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    placeholder="4.50"
+                    className="w-full px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Initial Stock
                   </label>
                   <input
                     type="number"
@@ -1243,13 +1363,13 @@ export default function InventoryPage() {
                     value={newMediaStock}
                     onChange={(e) => setNewMediaStock(e.target.value === '' ? '' : parseInt(e.target.value))}
                     placeholder="0"
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    className="w-full px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">
-                    Min Alert Level
+                    Min Alert
                   </label>
                   <input
                     type="number"
@@ -1257,10 +1377,19 @@ export default function InventoryPage() {
                     value={newMediaMinStock}
                     onChange={(e) => setNewMediaMinStock(e.target.value === '' ? '' : parseInt(e.target.value))}
                     placeholder="100"
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    className="w-full px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   />
                 </div>
               </div>
+
+              {Number(newMediaStock) > 0 && Number(newMediaCost) > 0 && (
+                <div className="text-[11px] font-bold text-emerald-800 p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between">
+                  <span>Initial Stock Valuation:</span>
+                  <span className="font-mono font-black text-xs text-emerald-900">
+                    ₹{(Number(newMediaStock) * Number(newMediaCost)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
 
               <div className="pt-3 flex items-center space-x-3">
                 <button
@@ -1409,18 +1538,44 @@ export default function InventoryPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Minimum Safety Stock Level (Sheets)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={editMinStock}
-                  onChange={(e) => setEditMinStock(e.target.value === '' ? '' : parseInt(e.target.value))}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Cost Per Sheet (₹) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    required
+                    value={editCost}
+                    onChange={(e) => setEditCost(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Minimum Alert (Sheets)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editMinStock}
+                    onChange={(e) => setEditMinStock(e.target.value === '' ? '' : parseInt(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  />
+                </div>
               </div>
+
+              {selectedMedia && (
+                <div className="text-[11px] font-bold text-emerald-800 p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between">
+                  <span>Current Stock Valuation:</span>
+                  <span className="font-mono font-black text-xs text-emerald-900">
+                    ₹{((selectedMedia.currentStock || 0) * (Number(editCost) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({selectedMedia.currentStock} sheets)
+                  </span>
+                </div>
+              )}
 
               <div className="pt-3 flex items-center space-x-3">
                 <button

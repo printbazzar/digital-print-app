@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { mediaId, quantity, reason } = body;
+    const { mediaId, quantity, reason, costPerSheet } = body;
 
     if (!mediaId || !quantity || Number(quantity) <= 0) {
       return NextResponse.json(
@@ -21,7 +21,8 @@ export async function POST(request: NextRequest) {
       mediaId,
       Number(quantity),
       user.id,
-      reason
+      reason,
+      costPerSheet !== undefined && costPerSheet !== '' ? Number(costPerSheet) : undefined
     );
 
     return NextResponse.json({

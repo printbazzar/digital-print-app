@@ -48,6 +48,7 @@ export default function MastersPage() {
   const [newMediaGsm, setNewMediaGsm] = useState<number | ''>(300);
   const [newMediaSize, setNewMediaSize] = useState('13x19');
   const [newMediaBrand, setNewMediaBrand] = useState('');
+  const [newMediaCost, setNewMediaCost] = useState<number | ''>(4.50);
   const [newMediaStock, setNewMediaStock] = useState<number | ''>(0);
   const [newMediaMinStock, setNewMediaMinStock] = useState<number | ''>(100);
 
@@ -57,6 +58,7 @@ export default function MastersPage() {
   const [editMediaGsm, setEditMediaGsm] = useState<number | ''>('');
   const [editMediaSize, setEditMediaSize] = useState('');
   const [editMediaBrand, setEditMediaBrand] = useState('');
+  const [editMediaCost, setEditMediaCost] = useState<number | ''>('');
   const [editMediaMinStock, setEditMediaMinStock] = useState<number | ''>('');
 
   // New Wastage Reason state
@@ -90,8 +92,9 @@ export default function MastersPage() {
         const d = await wrRes.json();
         setWastageReasons(d.reasons || []);
       }
-    } catch (err) {
-      console.error('Failed to fetch masters:', err);
+    } catch (err: any) {
+      console.error(err);
+      setStatusMsg({ type: 'error', text: 'Failed to load master configuration.' });
     } finally {
       setLoading(false);
     }
@@ -146,6 +149,7 @@ export default function MastersPage() {
           gsm: Number(newMediaGsm),
           size: newMediaSize.trim(),
           brand: newMediaBrand.trim() || 'Generic',
+          costPerSheet: newMediaCost !== '' ? Number(newMediaCost) : 0,
           currentStock: Number(newMediaStock) || 0,
           minimumStockLevel: Number(newMediaMinStock) || 100,
         }),
@@ -159,6 +163,7 @@ export default function MastersPage() {
       setNewMediaGsm(300);
       setNewMediaSize('13x19');
       setNewMediaBrand('');
+      setNewMediaCost(4.50);
       setNewMediaStock(0);
       setNewMediaMinStock(100);
       fetchMasters();
@@ -182,6 +187,7 @@ export default function MastersPage() {
           gsm: Number(editMediaGsm),
           size: editMediaSize.trim(),
           brand: editMediaBrand.trim() || 'Generic',
+          costPerSheet: editMediaCost !== '' ? Number(editMediaCost) : 0,
           minimumStockLevel: Number(editMediaMinStock) || 100,
         }),
       });
@@ -501,7 +507,7 @@ export default function MastersPage() {
               <span>Add New Media / Substrate to Master</span>
             </h3>
 
-            <form onSubmit={handleAddMedia} className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <form onSubmit={handleAddMedia} className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-7 gap-3">
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
                   Material Name *
@@ -559,6 +565,22 @@ export default function MastersPage() {
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Cost / Sheet (₹) *
+                </label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  required
+                  placeholder="4.50"
+                  value={newMediaCost}
+                  onChange={(e) => setNewMediaCost(e.target.value ? parseFloat(e.target.value) : '')}
+                  className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-yellow-400 font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
                   Initial Stock
                 </label>
                 <input
@@ -595,38 +617,50 @@ export default function MastersPage() {
                     <th className="py-2.5 px-4">GSM</th>
                     <th className="py-2.5 px-4">Size</th>
                     <th className="py-2.5 px-4">Brand</th>
+                    <th className="py-2.5 px-4">Cost / Sheet</th>
                     <th className="py-2.5 px-4">Current Stock</th>
+                    <th className="py-2.5 px-4">Stock Valuation</th>
                     <th className="py-2.5 px-4">Min Alert</th>
                     <th className="py-2.5 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {mediaList.map((m) => (
-                    <tr key={m.id} className="hover:bg-slate-50/80">
-                      <td className="py-2.5 px-4 font-bold text-slate-900">{m.name}</td>
-                      <td className="py-2.5 px-4">{m.gsm} GSM</td>
-                      <td className="py-2.5 px-4">{m.size}</td>
-                      <td className="py-2.5 px-4 text-slate-500">{m.brand || 'Generic'}</td>
-                      <td className="py-2.5 px-4 font-bold text-slate-800">{m.currentStock} sheets</td>
-                      <td className="py-2.5 px-4 text-slate-400">{m.minimumStockLevel} sheets</td>
-                      <td className="py-2.5 px-4 text-right">
-                        <button
-                          onClick={() => {
-                            setEditingMedia(m);
-                            setEditMediaName(m.name);
-                            setEditMediaGsm(m.gsm);
-                            setEditMediaSize(m.size);
-                            setEditMediaBrand(m.brand || 'Generic');
-                            setEditMediaMinStock(m.minimumStockLevel);
-                          }}
-                          className="px-2 py-1 bg-slate-100 hover:bg-yellow-400 text-slate-900 text-xs font-bold rounded-lg transition inline-flex items-center space-x-1"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                          <span>Edit</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {mediaList.map((m) => {
+                    const unitCost = Number(m.costPerSheet) || 0;
+                    const valuation = (m.currentStock || 0) * unitCost;
+
+                    return (
+                      <tr key={m.id} className="hover:bg-slate-50/80">
+                        <td className="py-2.5 px-4 font-bold text-slate-900">{m.name}</td>
+                        <td className="py-2.5 px-4">{m.gsm} GSM</td>
+                        <td className="py-2.5 px-4">{m.size}</td>
+                        <td className="py-2.5 px-4 text-slate-500">{m.brand || 'Generic'}</td>
+                        <td className="py-2.5 px-4 font-bold text-slate-900 font-mono">₹{unitCost.toFixed(2)}</td>
+                        <td className="py-2.5 px-4 font-bold text-slate-800">{m.currentStock} sheets</td>
+                        <td className="py-2.5 px-4 font-bold text-emerald-700 font-mono">
+                          ₹{valuation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-2.5 px-4 text-slate-400">{m.minimumStockLevel} sheets</td>
+                        <td className="py-2.5 px-4 text-right">
+                          <button
+                            onClick={() => {
+                              setEditingMedia(m);
+                              setEditMediaName(m.name);
+                              setEditMediaGsm(m.gsm);
+                              setEditMediaSize(m.size);
+                              setEditMediaBrand(m.brand || 'Generic');
+                              setEditMediaCost(m.costPerSheet ?? 0);
+                              setEditMediaMinStock(m.minimumStockLevel);
+                            }}
+                            className="px-2 py-1 bg-slate-100 hover:bg-yellow-400 text-slate-900 text-xs font-bold rounded-lg transition inline-flex items-center space-x-1"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>Edit</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -712,18 +746,44 @@ export default function MastersPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Minimum Safety Stock Level (Sheets)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={editMediaMinStock}
-                  onChange={(e) => setEditMediaMinStock(e.target.value === '' ? '' : parseInt(e.target.value))}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Cost / Sheet (₹) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    required
+                    value={editMediaCost}
+                    onChange={(e) => setEditMediaCost(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Min Alert (Sheets)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editMediaMinStock}
+                    onChange={(e) => setEditMediaMinStock(e.target.value === '' ? '' : parseInt(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  />
+                </div>
               </div>
+
+              {editingMedia && (
+                <div className="text-[11px] font-bold text-emerald-800 p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between">
+                  <span>Current Stock Valuation:</span>
+                  <span className="font-mono font-black text-xs text-emerald-900">
+                    ₹{((editingMedia.currentStock || 0) * (Number(editMediaCost) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({editingMedia.currentStock} sheets)
+                  </span>
+                </div>
+              )}
 
               <div className="pt-3 flex items-center space-x-3">
                 <button

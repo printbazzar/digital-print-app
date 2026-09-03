@@ -345,12 +345,15 @@ export const db = {
         return list.map((m) => ({
           ...m,
           brand: m.brand || 'Generic',
+          costPerSheet: Number(m.costPerSheet !== null && m.costPerSheet !== undefined ? m.costPerSheet : 0),
           createdAt: m.createdAt.toISOString(),
           updatedAt: m.updatedAt.toISOString(),
         }));
       } catch {
         return INITIAL_MEDIA.map((m) => ({
           ...m,
+          brand: m.brand || 'Generic',
+          costPerSheet: Number(m.costPerSheet || 0),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }));
@@ -362,6 +365,7 @@ export const db = {
         return m ? {
           ...m,
           brand: m.brand || 'Generic',
+          costPerSheet: Number(m.costPerSheet !== null && m.costPerSheet !== undefined ? m.costPerSheet : 0),
           createdAt: m.createdAt.toISOString(),
           updatedAt: m.updatedAt.toISOString(),
         } : undefined;
@@ -376,6 +380,7 @@ export const db = {
           gsm: Number(item.gsm),
           size: item.size.trim(),
           brand: item.brand?.trim() || 'Generic',
+          costPerSheet: Math.max(0, Number(item.costPerSheet) || 0),
           currentStock: Math.max(0, Number(item.currentStock) || 0),
           minimumStockLevel: Math.max(0, Number(item.minimumStockLevel) || 100),
           unit: item.unit || 'sheets',
@@ -385,6 +390,7 @@ export const db = {
       return {
         ...created,
         brand: created.brand || 'Generic',
+        costPerSheet: Number(created.costPerSheet || 0),
         createdAt: created.createdAt.toISOString(),
         updatedAt: created.updatedAt.toISOString(),
       };
@@ -396,6 +402,7 @@ export const db = {
         if (updates.gsm !== undefined) dataToUpdate.gsm = Number(updates.gsm);
         if (updates.size !== undefined) dataToUpdate.size = updates.size.trim();
         if (updates.brand !== undefined) dataToUpdate.brand = updates.brand.trim() || 'Generic';
+        if (updates.costPerSheet !== undefined) dataToUpdate.costPerSheet = Math.max(0, Number(updates.costPerSheet));
         if (updates.minimumStockLevel !== undefined) dataToUpdate.minimumStockLevel = Math.max(0, Number(updates.minimumStockLevel));
         if (updates.currentStock !== undefined) dataToUpdate.currentStock = Math.max(0, Number(updates.currentStock));
         if (updates.isActive !== undefined) dataToUpdate.isActive = Boolean(updates.isActive);
@@ -407,6 +414,7 @@ export const db = {
         return {
           ...updated,
           brand: updated.brand || 'Generic',
+          costPerSheet: Number(updated.costPerSheet || 0),
           createdAt: updated.createdAt.toISOString(),
           updatedAt: updated.updatedAt.toISOString(),
         };
@@ -419,7 +427,7 @@ export const db = {
 
   // --- INVENTORY MOVEMENTS ---
   inventory: {
-    restock: async (mediaId: string, quantity: number, userId: string, reason?: string) => {
+    restock: async (mediaId: string, quantity: number, userId: string, reason?: string, costPerSheet?: number) => {
       const media = await prisma.media.findUnique({ where: { id: mediaId } });
       if (!media) throw new Error('Media not found');
 
@@ -434,10 +442,15 @@ export const db = {
       const openingStock = media.currentStock;
       const closingStock = openingStock + qty;
 
+      const mediaUpdateData: any = { currentStock: closingStock };
+      if (costPerSheet !== undefined && Number(costPerSheet) >= 0) {
+        mediaUpdateData.costPerSheet = Number(costPerSheet);
+      }
+
       const [updatedMedia, movement] = await prisma.$transaction([
         prisma.media.update({
           where: { id: mediaId },
-          data: { currentStock: closingStock },
+          data: mediaUpdateData,
         }),
         prisma.inventoryMovement.create({
           data: {
