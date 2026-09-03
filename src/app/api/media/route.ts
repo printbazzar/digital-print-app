@@ -46,6 +46,20 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const body = await request.json();
+
+    // Bulk price / cost update
+    if (body.bulk && Array.isArray(body.items)) {
+      for (const item of body.items) {
+        if (item.id && item.costPerSheet !== undefined) {
+          await db.media.update(item.id, {
+            costPerSheet: Math.max(0, Number(item.costPerSheet)),
+          });
+        }
+      }
+      const media = await db.media.list();
+      return NextResponse.json({ success: true, media });
+    }
+
     const { id, name, gsm, size, brand, costPerSheet, minimumStockLevel, isActive } = body;
 
     if (!id) return NextResponse.json({ error: 'Media ID is required' }, { status: 400 });

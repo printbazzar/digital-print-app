@@ -804,12 +804,32 @@ export default function ProductionEntryPage() {
                 onChange={(e) => setSelectedMediaId(e.target.value)}
                 className="w-full px-3.5 py-2.5 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 focus:outline-none"
               >
-                {mediaList.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.gsm} GSM {m.name} ({m.size}) — In Stock: {m.currentStock} sheets
-                  </option>
-                ))}
+                {mediaList.map((m) => {
+                  const unitCost = Number(m.costPerSheet || 0);
+                  return (
+                    <option key={m.id} value={m.id}>
+                      {m.gsm} GSM {m.name} ({m.size}) — ₹{unitCost.toFixed(2)}/sheet [Stock: {m.currentStock}]
+                    </option>
+                  );
+                })}
               </select>
+
+              {selectedMedia && (
+                <div className="mt-2.5 p-2.5 bg-slate-100/90 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs border border-slate-200">
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-slate-500 font-semibold">Paper Purchase Cost:</span>
+                    <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                      ₹{Number(selectedMedia.costPerSheet || 0).toFixed(2)} / sheet
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-slate-500 font-medium">Job Paper Value ({liveCalc.sheetConsumption} sh):</span>
+                    <span className="font-mono font-black text-slate-900">
+                      ₹{(liveCalc.sheetConsumption * Number(selectedMedia.costPerSheet || 0)).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1009,6 +1029,12 @@ export default function ProductionEntryPage() {
                 <div className="flex items-center justify-between text-slate-400">
                   <span>GST ({liveCalc.unitCost > 0 ? '18%' : '0%'}):</span>
                   <span className="font-semibold text-white">₹{liveCalc.gstAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>Paper Material Cost ({liveCalc.sheetConsumption} sh):</span>
+                  <span className="font-semibold text-emerald-400 font-mono">
+                    ₹{(liveCalc.sheetConsumption * Number(selectedMedia?.costPerSheet || 0)).toFixed(2)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-yellow-400 font-extrabold text-sm pt-2 border-t border-white/10">
                   <span>Grand Total Cost:</span>

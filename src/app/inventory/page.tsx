@@ -81,6 +81,12 @@ export default function InventoryPage() {
   const [editCost, setEditCost] = useState<number | ''>('');
   const [editMinStock, setEditMinStock] = useState<number | ''>('');
 
+  // 5. Paper Price Management States
+  const [priceModalOpen, setPriceModalOpen] = useState(false);
+  const [paperPrices, setPaperPrices] = useState<{ [key: string]: number }>({});
+  const [singlePriceModalOpen, setSinglePriceModalOpen] = useState(false);
+  const [singlePriceVal, setSinglePriceVal] = useState<number | ''>('');
+
   const [actionLoading, setActionLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -373,7 +379,88 @@ export default function InventoryPage() {
     setRestockQty('');
     setRestockReason('');
     setRestockCost(m.costPerSheet !== undefined && m.costPerSheet !== null ? m.costPerSheet : '');
-    setRestockModalOpen(true);
+  };
+
+  // Open Fast Price Matrix Modal with Pre-fill
+  const openPriceModal = () => {
+    const pMap: { [key: string]: number } = {};
+    mediaList.forEach((m) => {
+      pMap[m.id] = Number(m.costPerSheet) || 0;
+    });
+    setPaperPrices(pMap);
+    setPriceModalOpen(true);
+  };
+
+  // Open Single Item Quick Price Modal
+  const openSinglePriceModal = (m: any) => {
+    setSelectedMedia(m);
+    setSinglePriceVal(Number(m.costPerSheet) || 0);
+    setSinglePriceModalOpen(true);
+  };
+
+  // Handle Save All Paper Prices (Bulk)
+  const handleSaveAllPrices = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    setStatusMsg(null);
+    try {
+      const items = Object.entries(paperPrices).map(([id, cost]) => ({
+        id,
+        costPerSheet: Number(cost) || 0,
+      }));
+
+      const res = await fetch('/api/media', {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ bulk: true, items }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update paper prices');
+
+      setStatusMsg({
+        type: 'success',
+        text: `Updated purchase prices for all ${items.length} paper media items successfully!`,
+      });
+      setPriceModalOpen(false);
+      fetchInventoryData();
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Error updating paper prices' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Handle Save Single Paper Price
+  const handleSaveSinglePrice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMedia) return;
+    setActionLoading(true);
+    setStatusMsg(null);
+    try {
+      const res = await fetch('/api/media', {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          id: selectedMedia.id,
+          costPerSheet: singlePriceVal !== '' ? Number(singlePriceVal) : 0,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update price');
+
+      setStatusMsg({
+        type: 'success',
+        text: `Updated purchase price for '${selectedMedia.name}' to ₹${Number(singlePriceVal || 0).toFixed(2)} / sheet.`,
+      });
+      setSinglePriceModalOpen(false);
+      fetchInventoryData();
+    } catch (err: any) {
+      setStatusMsg({ type: 'error', text: err.message || 'Error updating paper price' });
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const filteredMedia = mediaList.filter((m) =>
@@ -419,6 +506,16 @@ export default function InventoryPage() {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Fast Set Paper Prices Button */}
+          <button
+            onClick={openPriceModal}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs transition"
+            title="View and set purchase cost per sheet for all paper media"
+          >
+            <DollarSign className="w-4 h-4 stroke-[2.5]" />
+            <span>💰 Set Paper Prices</span>
+          </button>
+
           {/* Add New Media (Paper Type) */}
           <button
             onClick={() => setAddMediaModalOpen(true)}
@@ -631,9 +728,15 @@ export default function InventoryPage() {
                         {m.brand || 'Generic'}
                       </td>
                       <td className="py-3.5 px-4 font-bold text-slate-900">
-                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-900 font-mono text-[11px] font-bold">
-                          ₹{unitCost.toFixed(2)}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openSinglePriceModal(m)}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono text-xs font-black transition flex items-center space-x-1.5 group shadow-2xs"
+                          title="Click to view or change this paper's purchase cost per sheet"
+                        >
+                          <span>₹{unitCost.toFixed(2)}</span>
+                          <Edit2 className="w-3 h-3 text-emerald-600 opacity-60 group-hover:opacity-100" />
+                        </button>
                       </td>
                       <td className="py-3.5 px-4">
                         <span
@@ -667,7 +770,17 @@ export default function InventoryPage() {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end space-x-1.5">
-                          {/* 1. Quick Adjust Button */}
+                          {/* 1. Quick Set Price Button */}
+                          <button
+                            onClick={() => openSinglePriceModal(m)}
+                            className="px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-lg border border-emerald-300 transition flex items-center space-x-1"
+                            title="Set or Edit Cost Per Sheet"
+                          >
+                            <DollarSign className="w-3.5 h-3.5 stroke-[2.5]" />
+                            <span>Price</span>
+                          </button>
+
+                          {/* 2. Quick Adjust Button */}
                           <button
                             onClick={() => openAdjustModal(m)}
                             className="px-2.5 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black text-xs rounded-lg shadow-2xs transition flex items-center space-x-1"
@@ -677,7 +790,7 @@ export default function InventoryPage() {
                             <span>Adjust</span>
                           </button>
 
-                          {/* 2. Quick Purchase Restock Button */}
+                          {/* 3. Quick Purchase Restock Button */}
                           <button
                             onClick={() => openRestockModal(m)}
                             className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-lg transition flex items-center space-x-1"
@@ -687,7 +800,7 @@ export default function InventoryPage() {
                             <span>Purchase</span>
                           </button>
 
-                          {/* 3. Edit Media Details */}
+                          {/* 4. Edit Media Details */}
                           <button
                             onClick={() => openEditModal(m)}
                             className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-950 rounded-lg transition flex items-center space-x-1 font-semibold text-xs"
@@ -1592,6 +1705,215 @@ export default function InventoryPage() {
                 >
                   <Save className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>{actionLoading ? 'Saving...' : 'Save Paper Changes'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: SINGLE PAPER QUICK PRICE MODAL */}
+      {singlePriceModalOpen && selectedMedia && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-slate-950 px-6 py-4 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center font-bold">
+                  <DollarSign className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">Set Paper Purchase Price</h3>
+                  <p className="text-[11px] text-emerald-400 font-medium">Configure material purchase cost per sheet</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSinglePriceModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSinglePrice} className="p-6 space-y-4">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Selected Paper Substrate</span>
+                <div className="text-sm font-black text-slate-900 mt-0.5">{selectedMedia.name}</div>
+                <div className="text-xs text-slate-600 font-medium mt-0.5">
+                  {selectedMedia.gsm} GSM • {selectedMedia.size} • {selectedMedia.brand || 'Generic'}
+                </div>
+                <div className="mt-2 text-xs font-bold text-slate-700 flex items-center justify-between pt-2 border-t border-slate-200">
+                  <span>Current Stock in Hand:</span>
+                  <span className="font-mono font-black text-slate-900">{selectedMedia.currentStock.toLocaleString()} sheets</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  Purchase Cost / Sheet (₹) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-slate-400 font-bold text-sm">₹</span>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    required
+                    value={singlePriceVal}
+                    onChange={(e) => setSinglePriceVal(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    placeholder="e.g. 4.50"
+                    className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-base font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {singlePriceVal !== '' && Number(singlePriceVal) >= 0 && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
+                  <span className="text-emerald-800 font-bold">Projected Stock Valuation:</span>
+                  <span className="font-mono font-black text-emerald-950 text-sm">
+                    ₹{(selectedMedia.currentStock * Number(singlePriceVal)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setSinglePriceModalOpen(false)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center space-x-1.5"
+                >
+                  <Save className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>{actionLoading ? 'Saving...' : 'Save Paper Price'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: FAST BULK PAPER PRICE MATRIX MODAL */}
+      {priceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white w-full max-w-3xl max-h-[90vh] rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="bg-slate-950 px-6 py-4 flex items-center justify-between border-b border-slate-800 flex-shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white flex items-center justify-center font-bold">
+                  <DollarSign className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">Fast Paper Purchase Price Matrix</h3>
+                  <p className="text-[11px] text-emerald-400 font-medium">Quickly configure purchase cost per sheet for all media items</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPriceModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAllPrices} className="p-6 overflow-y-auto flex-1 space-y-4">
+              <div className="flex items-center justify-between bg-emerald-50 p-3 rounded-xl border border-emerald-300 text-xs text-emerald-950 font-semibold">
+                <span>💡 Enter the purchase cost per sheet (₹) for each paper type to calculate total stock value.</span>
+                <span className="text-[11px] font-black text-emerald-800">{mediaList.length} Papers Listed</span>
+              </div>
+
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs text-slate-600">
+                  <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3">Paper / Media Name</th>
+                      <th className="py-2.5 px-3">GSM &amp; Size</th>
+                      <th className="py-2.5 px-3">Stock in Hand</th>
+                      <th className="py-2.5 px-3 w-40">Cost / Sheet (₹)</th>
+                      <th className="py-2.5 px-3 text-right">Total Item Value</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {mediaList.map((m) => {
+                      const cost = paperPrices[m.id] !== undefined ? paperPrices[m.id] : (Number(m.costPerSheet) || 0);
+                      const rowTotal = (m.currentStock || 0) * cost;
+
+                      return (
+                        <tr key={m.id} className="hover:bg-slate-50/80">
+                          <td className="py-2.5 px-3 font-bold text-slate-900">
+                            {m.name}
+                            <span className="text-[10px] text-slate-400 font-normal block">{m.brand || 'Generic'}</span>
+                          </td>
+                          <td className="py-2.5 px-3 font-semibold text-slate-700">
+                            {m.gsm} GSM • {m.size}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono font-bold text-slate-700">
+                            {m.currentStock.toLocaleString()} sheets
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div className="relative">
+                              <span className="absolute left-2.5 top-1.5 text-slate-400 font-bold text-xs">₹</span>
+                              <input
+                                type="number"
+                                step="0.05"
+                                min="0"
+                                value={cost}
+                                onChange={(e) => {
+                                  const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                                  setPaperPrices((prev) => ({ ...prev, [m.id]: val }));
+                                }}
+                                className="w-full pl-6 pr-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                              />
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
+                            ₹{rowTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Total Stock Valuation Live Strip */}
+              <div className="p-3 bg-slate-950 text-white rounded-xl flex items-center justify-between text-xs">
+                <div className="flex items-center space-x-2">
+                  <Coins className="w-4 h-4 text-yellow-400" />
+                  <span className="text-slate-400 font-bold">Total Physical Sheets:</span>
+                  <span className="font-mono font-black text-white">
+                    {mediaList.reduce((acc, m) => acc + (m.currentStock || 0), 0).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-slate-400 font-bold">Total Inventory Valuation:</span>
+                  <span className="font-mono font-black text-emerald-400 text-sm">
+                    ₹{mediaList.reduce((acc, m) => {
+                      const cost = paperPrices[m.id] !== undefined ? paperPrices[m.id] : (Number(m.costPerSheet) || 0);
+                      return acc + ((m.currentStock || 0) * cost);
+                    }, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setPriceModalOpen(false)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md transition disabled:opacity-50 flex items-center space-x-1.5"
+                >
+                  <Save className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>{actionLoading ? 'Saving All...' : 'Save All Paper Prices'}</span>
                 </button>
               </div>
             </form>
