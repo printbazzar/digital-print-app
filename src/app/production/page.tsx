@@ -22,6 +22,8 @@ import {
   History,
   Check,
   Search,
+  Edit2,
+  Save,
 } from 'lucide-react';
 import { calculateJobProduction, resolvePrintRate, PrintSide, PaperSize, PrintType } from '@/lib/calculations';
 
@@ -67,6 +69,28 @@ export default function ProductionEntryPage() {
   // Delete Job Modal
   const [deleteModalJob, setDeleteModalJob] = useState<any | null>(null);
   const [deletingJob, setDeletingJob] = useState(false);
+
+  // Edit Job Modal
+  const [editModalJob, setEditModalJob] = useState<any | null>(null);
+  const [editJobNumber, setEditJobNumber] = useState('');
+  const [editCustomerName, setEditCustomerName] = useState('');
+  const [editProduct, setEditProduct] = useState('');
+  const [editOrderedQuantity, setEditOrderedQuantity] = useState<number | ''>('');
+  const [editPrintType, setEditPrintType] = useState<PrintType>('COLOUR');
+  const [editPaperSize, setEditPaperSize] = useState<PaperSize>('A3');
+  const [editSelectedTier, setEditSelectedTier] = useState<'TIER1' | 'TIER2'>('TIER1');
+  const [editPrintSide, setEditPrintSide] = useState<PrintSide>('SINGLE');
+  const [editMediaId, setEditMediaId] = useState('');
+  const [editMachineId, setEditMachineId] = useState('');
+  const [editGoodPrints, setEditGoodPrints] = useState<number | ''>('');
+  const [editWastage, setEditWastage] = useState<number | ''>(0);
+  const [editReprint, setEditReprint] = useState<number | ''>(0);
+  const [editReprintType, setEditReprintType] = useState<'PRODUCTION_REPRINT' | 'CUSTOMER_ADDITIONAL'>('PRODUCTION_REPRINT');
+  const [editWastageReasonId, setEditWastageReasonId] = useState('');
+  const [editWastageReasonOther, setEditWastageReasonOther] = useState('');
+  const [editRemarks, setEditRemarks] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const [toastMsg, setToastMsg] = useState<{ jobNumber: string; customer: string; clicks: number; sheets: number } | null>(null);
 
@@ -240,6 +264,141 @@ export default function ProductionEntryPage() {
       alert('Upload failed: ' + err.message);
     } finally {
       setUploadingPhoto(false);
+    }
+  };
+
+  // Edit Job Modal State & Calculations
+  const openEditModal = (j: any) => {
+    setEditModalJob(j);
+    setEditJobNumber(j.jobNumber || '');
+    setEditCustomerName(j.customerName || '');
+    setEditProduct(j.product || '');
+    setEditOrderedQuantity(j.orderedQuantity !== undefined && j.orderedQuantity !== null ? j.orderedQuantity : '');
+    setEditPrintType((j.printType as PrintType) || 'COLOUR');
+    setEditPaperSize((j.paperSize as PaperSize) || 'A3');
+    setEditSelectedTier('TIER1');
+    setEditPrintSide((j.printSide as PrintSide) || 'SINGLE');
+    setEditMediaId(j.mediaId || (mediaList[0]?.id || ''));
+    setEditMachineId(j.machineId || (machines[0]?.id || ''));
+    setEditGoodPrints(j.goodPrints !== undefined ? j.goodPrints : '');
+    setEditWastage(j.wastage !== undefined ? j.wastage : 0);
+    setEditReprint(j.reprint !== undefined ? j.reprint : 0);
+    setEditReprintType(j.reprintType || 'PRODUCTION_REPRINT');
+    setEditWastageReasonId(j.wastageReasonId || '');
+    setEditWastageReasonOther(j.wastageReasonOther || '');
+    setEditRemarks(j.remarks || '');
+    setEditError(null);
+  };
+
+  const editG = typeof editGoodPrints === 'number' ? Math.max(0, editGoodPrints) : 0;
+  const editW = typeof editWastage === 'number' ? Math.max(0, editWastage) : 0;
+  const editRep = typeof editReprint === 'number' ? Math.max(0, editReprint) : 0;
+
+  const editSelectedMedia = mediaList.find((m) => m.id === editMediaId) || editModalJob?.media;
+
+  const editRateInfo = resolvePrintRate({
+    paperSize: editPaperSize,
+    printType: editPrintType,
+    selectedTier: editSelectedTier,
+    dbRates: rates,
+  });
+
+  const editLiveCalc = calculateJobProduction({
+    goodPrints: editG,
+    wastage: editW,
+    reprint: editRep,
+    printSide: editPrintSide,
+    unitRate: editRateInfo.rate,
+    gstPercent: editRateInfo.gstPercent,
+  });
+
+  const oldSheets = editModalJob?.sheetConsumption || 0;
+  const newSheets = editLiveCalc.sheetConsumption;
+  const isSameMedia = editModalJob?.mediaId === editMediaId;
+  const sheetsDiff = newSheets - oldSheets;
+
+  const handleSaveEditJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editModalJob) return;
+
+    if (editG <= 0) {
+      setEditError('Good prints produced must be greater than 0.');
+      return;
+    }
+
+    if (editW > 0 && !editWastageReasonId) {
+      setEditError('Please select a Wastage Reason since wastage is greater than 0.');
+      return;
+    }
+
+    setSavingEdit(true);
+    setEditError(null);
+
+    try {
+      const payload = {
+        jobNumber: editJobNumber.trim(),
+        customerName: editCustomerName.trim(),
+        product: editProduct.trim(),
+        orderedQuantity: editOrderedQuantity !== '' ? Number(editOrderedQuantity) : editG,
+        printType: editPrintType,
+        paperSize: editPaperSize,
+        selectedTier: editSelectedTier,
+        printSide: editPrintSide,
+        mediaId: editMediaId,
+        machineId: editMachineId || editModalJob.machineId,
+        goodPrints: editG,
+        wastage: editW,
+        reprint: editRep,
+        reprintType: editReprintType || undefined,
+        wastageReasonId: editW > 0 ? (editWastageReasonId || undefined) : undefined,
+        wastageReasonOther: editWastageReasonOther || undefined,
+        remarks: editRemarks.trim() || undefined,
+      };
+
+      const res = await fetch(`/api/jobs/${editModalJob.id}`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update job');
+      }
+
+      // 1. Update in todayJobs list
+      setTodayJobs((prev) =>
+        prev.map((item) => (item.id === editModalJob.id ? { ...item, ...data.job } : item))
+      );
+
+      // 2. Refresh media stocks from server
+      try {
+        const medRes = await fetch('/api/media', { headers: getAuthHeaders() });
+        if (medRes.ok) {
+          const medData = await medRes.json();
+          setMediaList(medData.media || []);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+
+      const updatedJobNum = data.job?.jobNumber || editJobNumber;
+      const updatedCustomer = data.job?.customerName || editCustomerName;
+
+      // 3. Close modal
+      setEditModalJob(null);
+
+      // 4. Show success toast
+      setToastMsg({
+        jobNumber: updatedJobNum,
+        customer: updatedCustomer,
+        clicks: data.job?.machineClicks || 0,
+        sheets: data.job?.sheetConsumption || 0,
+      });
+    } catch (err: any) {
+      setEditError(err.message || 'Failed to save changes');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -519,13 +678,30 @@ export default function ProductionEntryPage() {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setToastMsg(null)}
-            className="p-1.5 text-emerald-600 hover:text-emerald-900 rounded-lg hover:bg-emerald-100 transition"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center space-x-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const found = todayJobs.find((j: any) => j.jobNumber === toastMsg.jobNumber);
+                if (found) {
+                  openEditModal(found);
+                  setToastMsg(null);
+                }
+              }}
+              className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-950 border border-emerald-400 rounded-xl text-xs font-black shadow-xs transition flex items-center space-x-1.5"
+              title="Click to edit this order if there was any mistake"
+            >
+              <Edit2 className="w-3.5 h-3.5 text-emerald-700 stroke-[2.5]" />
+              <span>✏️ Edit This Job</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setToastMsg(null)}
+              className="p-1.5 text-emerald-600 hover:text-emerald-900 rounded-lg hover:bg-emerald-100 transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -1195,15 +1371,26 @@ export default function ProductionEntryPage() {
                       </td>
                     )}
                     <td className="py-3 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setDeleteModalJob(j)}
-                        className="px-2.5 py-1.5 bg-red-50 hover:bg-red-600 text-red-700 hover:text-white rounded-lg font-bold text-xs transition flex items-center space-x-1 ml-auto"
-                        title="Delete mistaken entry & restore sheets"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete</span>
-                      </button>
+                      <div className="flex items-center justify-end space-x-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(j)}
+                          className="px-2.5 py-1.5 bg-yellow-100 hover:bg-yellow-400 text-slate-950 rounded-lg font-black text-xs transition flex items-center space-x-1 shadow-2xs border border-yellow-300"
+                          title="Edit job details, quantities, media, or remarks"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteModalJob(j)}
+                          className="px-2.5 py-1.5 bg-red-50 hover:bg-red-600 text-red-700 hover:text-white rounded-lg font-bold text-xs transition flex items-center space-x-1"
+                          title="Delete mistaken entry & restore sheets"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1273,6 +1460,348 @@ export default function ProductionEntryPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT PRODUCTION JOB MODAL */}
+      {editModalJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm overflow-y-auto animate-fade-in">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-6">
+            {/* Modal Header */}
+            <div className="bg-slate-950 px-6 py-4 flex items-center justify-between text-white border-b border-slate-800">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-yellow-400 text-slate-950 flex items-center justify-center font-black">
+                  <Edit2 className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-sm font-black text-white">Edit Production Job</h3>
+                    <span className="px-2 py-0.5 rounded bg-yellow-400/20 text-yellow-300 font-mono text-xs font-bold border border-yellow-400/30">
+                      {editModalJob.jobNumber}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Correct any entry mistakes; stock and machine clicks will automatically recalculate.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditModalJob(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveEditJob} className="p-6 space-y-4 text-xs">
+              {editError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 font-bold flex items-center space-x-2 animate-fade-in">
+                  <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              {/* 1. Job & Customer Details */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                  1. Customer &amp; Product Info
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Job Number *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editJobNumber}
+                      onChange={(e) => setEditJobNumber(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Customer Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editCustomerName}
+                      onChange={(e) => setEditCustomerName(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Product Description *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editProduct}
+                      onChange={(e) => setEditProduct(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Print Specs & Media */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                  2. Print Specifications &amp; Paper Substrate
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Print Type */}
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Print Mode</label>
+                    <div className="grid grid-cols-2 gap-1 bg-white p-1 rounded-lg border border-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => setEditPrintType('COLOUR')}
+                        className={`py-1.5 font-black text-xs rounded transition ${
+                          editPrintType === 'COLOUR'
+                            ? 'bg-yellow-400 text-slate-950 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Colour
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditPrintType('BW')}
+                        className={`py-1.5 font-black text-xs rounded transition ${
+                          editPrintType === 'BW'
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        B&amp;W
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Paper Size */}
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Size Format</label>
+                    <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-lg border border-slate-300">
+                      {(['A4', 'A3', 'BANNER'] as PaperSize[]).map((sz) => (
+                        <button
+                          key={sz}
+                          type="button"
+                          onClick={() => setEditPaperSize(sz)}
+                          className={`py-1.5 font-black text-[11px] rounded transition ${
+                            editPaperSize === sz
+                              ? 'bg-yellow-400 text-slate-950 shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {sz === 'A3' ? 'A3 / 13x19' : sz}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Print Sides */}
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Printing Side</label>
+                    <div className="grid grid-cols-2 gap-1 bg-white p-1 rounded-lg border border-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => setEditPrintSide('SINGLE')}
+                        className={`py-1.5 font-black text-xs rounded transition ${
+                          editPrintSide === 'SINGLE'
+                            ? 'bg-yellow-400 text-slate-950 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        1-Side
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditPrintSide('DOUBLE')}
+                        className={`py-1.5 font-black text-xs rounded transition ${
+                          editPrintSide === 'DOUBLE'
+                            ? 'bg-yellow-400 text-slate-950 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        2-Side (x2)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Paper Media Selection */}
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Paper Media / Substrate *
+                  </label>
+                  <select
+                    value={editMediaId}
+                    onChange={(e) => setEditMediaId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  >
+                    {mediaList.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.gsm} GSM {m.name} ({m.size}) — ₹{Number(m.costPerSheet || 0).toFixed(2)}/sheet [Stock: {m.currentStock}]
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* 3. Output Quantities & Wastage */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                  3. Printed Output &amp; Wastage Counts
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Good Prints *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={editGoodPrints}
+                      onChange={(e) => setEditGoodPrints(e.target.value === '' ? '' : parseInt(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-black text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Wastage Sheets</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editWastage}
+                      onChange={(e) => setEditWastage(e.target.value === '' ? 0 : parseInt(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-black text-base text-red-600 focus:outline-none focus:ring-2 focus:ring-red-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Reprint Sheets</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editReprint}
+                      onChange={(e) => setEditReprint(e.target.value === '' ? 0 : parseInt(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-black text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    />
+                  </div>
+                </div>
+
+                {/* Wastage Reason Dropdown if Wastage > 0 */}
+                {editW > 0 && (
+                  <div className="pt-2 border-t border-slate-200">
+                    <label className="block font-bold text-red-700 mb-1">
+                      Wastage Reason (Required since wastage is {editW} sheets) *
+                    </label>
+                    <select
+                      required
+                      value={editWastageReasonId}
+                      onChange={(e) => setEditWastageReasonId(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-red-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-400"
+                    >
+                      <option value="">-- Select Wastage Reason --</option>
+                      {wastageReasons.map((wr) => (
+                        <option key={wr.id} value={wr.id}>
+                          {wr.reason}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Remarks / Note</label>
+                  <input
+                    type="text"
+                    value={editRemarks}
+                    onChange={(e) => setEditRemarks(e.target.value)}
+                    placeholder="e.g. Corrected good prints count from customer job sheet"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  />
+                </div>
+              </div>
+
+              {/* 4. Live Stock & Financial Recalculation Strip */}
+              <div className="p-4 bg-slate-950 text-white rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center space-x-2">
+                    <History className="w-4 h-4 text-yellow-400" />
+                    <span className="font-bold text-slate-300 text-xs">Live Calculation Impact:</span>
+                  </div>
+                  <span className="font-mono text-xs text-yellow-400 font-bold">
+                    Billing Rate: ₹{editRateInfo.rate.toFixed(2)}/click
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Machine Clicks:</span>
+                    <span className="font-black text-white font-mono">
+                      {editModalJob.machineClicks} → {editLiveCalc.machineClicks} clicks
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Sheet Consumption:</span>
+                    <span className="font-black text-white font-mono">
+                      {oldSheets} → {newSheets} sheets
+                    </span>
+                  </div>
+                  {isOwner && (
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">Job Billing Cost:</span>
+                      <span className="font-black text-yellow-400 font-mono">
+                        ₹{editModalJob.grandTotalCost} → ₹{editLiveCalc.grandTotalCost.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Stock Adjustment Impact Badge */}
+                <div className="pt-2 border-t border-slate-800 text-[11px] font-bold">
+                  {isSameMedia ? (
+                    sheetsDiff > 0 ? (
+                      <span className="text-amber-400 flex items-center space-x-1">
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>⚠️ Will deduct {sheetsDiff} additional sheet(s) from {editSelectedMedia?.name || 'media'}.</span>
+                      </span>
+                    ) : sheetsDiff < 0 ? (
+                      <span className="text-emerald-400 flex items-center space-x-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>✅ Will refund and restore {Math.abs(sheetsDiff)} sheet(s) back to {editSelectedMedia?.name || 'media'}.</span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">
+                        Paper stock consumption remains unchanged ({newSheets} sheets).
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-cyan-400 flex items-center space-x-1">
+                      <RefreshCw className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>🔄 Will return {oldSheets} sheets to previous paper &amp; deduct {newSheets} sheets from newly selected paper.</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Form Action Buttons */}
+              <div className="pt-2 flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setEditModalJob(null)}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="flex-1 py-3 bg-yellow-400 hover:bg-yellow-500 text-slate-950 font-black rounded-xl shadow-md shadow-yellow-400/25 transition disabled:opacity-50 flex items-center justify-center space-x-2"
+                >
+                  <Save className="w-4 h-4 stroke-[2.5]" />
+                  <span>{savingEdit ? 'Saving Changes...' : 'Save Job Changes'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

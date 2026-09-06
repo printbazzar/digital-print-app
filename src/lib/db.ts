@@ -844,25 +844,293 @@ export const db = {
       }
     },
 
-    update: async (id: string, updates: any, userId: string) => {
-      try {
-        const updated = await prisma.jobProduction.update({
-          where: { id },
-          data: updates,
-        });
-        return {
-          ...updated,
-          unitCost: Number(updated.unitCost),
-          totalCost: Number(updated.totalCost),
-          gstAmount: Number(updated.gstAmount),
-          grandTotalCost: Number(updated.grandTotalCost),
-          productionDate: updated.productionDate.toISOString().split('T')[0],
-          createdAt: updated.createdAt.toISOString(),
-          updatedAt: updated.updatedAt.toISOString(),
-        };
-      } catch {
-        return null;
+    update: async (id: string, updates: any, userId?: string) => {
+      const existingJob = await prisma.jobProduction.findUnique({
+        where: { id },
+        include: { media: true, machine: true, operator: true, wastageReason: true },
+      });
+      if (!existingJob) throw new Error('Job not found');
+
+      let validUserId = userId;
+      if (!validUserId) {
+        const firstUser = await prisma.user.findFirst();
+        validUserId = firstUser?.id || 'usr-owner-001';
       }
+
+      // 1. Resolve fields with defaults from existingJob
+      const targetJobNumber = updates.jobNumber ? String(updates.jobNumber).trim() : existingJob.jobNumber;
+      const targetCustomerName = updates.customerName ? String(updates.customerName).trim() : existingJob.customerName;
+      const targetProduct = updates.product ? String(updates.product).trim() : existingJob.product;
+      const targetOrderedQuantity = updates.orderedQuantity !== undefined ? Math.max(1, Number(updates.orderedQuantity)) : existingJob.orderedQuantity;
+      const targetPrintType = (updates.printType || existingJob.printType) as PrintType;
+      const targetPaperSize = (updates.paperSize || existingJob.paperSize) as PaperSize;
+      const targetPrintSide = (updates.printSide || existingJob.printSide) as PrintSide;
+      const targetMediaId = updates.mediaId || existingJob.mediaId;
+      const targetMachineId = updates.machineId || existingJob.machineId;
+
+      const targetGoodPrints = updates.goodPrints !== undefined ? Math.max(0, Number(updates.goodPrints)) : existingJob.goodPrints;
+      const targetWastage = updates.wastage !== undefined ? Math.max(0, Number(updates.wastage)) : existingJob.wastage;
+      const targetReprint = updates.reprint !== undefined ? Math.max(0, Number(updates.reprint)) : existingJob.reprint;
+      const targetReprintType = updates.reprintType !== undefined ? (updates.reprintType || null) : existingJob.reprintType;
+
+      const targetWastageReasonId = updates.wastageReasonId !== undefined ? (updates.wastageReasonId || null) : existingJob.wastageReasonId;
+      const targetWastageReasonOther = updates.wastageReasonOther !== undefined ? (updates.wastageReasonOther || null) : existingJob.wastageReasonOther;
+      const targetRemarks = updates.remarks !== undefined ? (updates.remarks || null) : existingJob.remarks;
+      const targetProductionDate = updates.productionDate ? new Date(updates.productionDate) : existingJob.productionDate;
+
+      // 2. Fetch machine rate and new media
+      const [rate, newMedia] = await Promise.all([
+        prisma.printRate.findUnique({
+          where: {
+            machineId_paperSize_printType: {
+              machineId: targetMachineId,
+              paperSize: targetPaperSize,
+              printType: targetPrintType,
+            },
+          },
+        }),
+        prisma.media.findUnique({ where: { id: targetMediaId } }),
+      ]);
+
+      if (!newMedia) throw new Error('Target media not found');
+
+      const resolvedRate = resolvePrintRate({
+        paperSize: targetPaperSize,
+        printType: targetPrintType,
+        selectedTier: updates.selectedTier,
+        dbRates: rate ? [{
+          paperSize: rate.paperSize,
+          printType: rate.printType,
+          rate: Number(rate.rate),
+          tier2Rate: rate.tier2Rate ? Number(rate.tier2Rate) : Number(rate.rate),
+          tierThreshold: rate.tierThreshold,
+          gstPercent: Number(rate.gstPercent),
+        }] : undefined,
+      });
+
+      const unitRateVal = updates.unitRate !== undefined ? Number(updates.unitRate) : resolvedRate.rate;
+      const gstVal = rate ? Number(rate.gstPercent) : resolvedRate.gstPercent;
+
+      const calc = calculateJobProduction({
+        goodPrints: targetGoodPrints,
+        wastage: targetWastage,
+        reprint: targetReprint,
+        printSide: targetPrintSide,
+        unitRate: unitRateVal,
+        gstPercent: gstVal,
+      });
+
+      const oldMediaId = existingJob.mediaId;
+      const oldConsumption = existingJob.sheetConsumption;
+      const newConsumption = calc.sheetConsumption;
+
+      // 3. Reconcile Stock Changes & Update Job
+      let updatedJobResult: any = null;
+
+      if (oldMediaId === targetMediaId) {
+        const sheetDiff = newConsumption - oldConsumption;
+        if (sheetDiff > 0 && newMedia.currentStock < sheetDiff) {
+          throw new Error(
+            `INSUFFICIENT STOCK: Media '${newMedia.name}' has ${newMedia.currentStock} sheets, but this edit requires ${sheetDiff} additional sheets.`
+          );
+        }
+
+        const newStock = newMedia.currentStock - sheetDiff;
+
+        await prisma.$transaction(async (tx) => {
+          if (sheetDiff !== 0) {
+            await tx.media.update({
+              where: { id: targetMediaId },
+              data: { currentStock: newStock },
+            });
+
+            await tx.inventoryMovement.create({
+              data: {
+                mediaId: targetMediaId,
+                quantity: -sheetDiff,
+                openingStock: newMedia.currentStock,
+                closingStock: newStock,
+                movementType: 'STOCK_ADJUSTMENT',
+                referenceId: `EDIT-${targetJobNumber}`,
+                reason: sheetDiff > 0
+                  ? `Additional ${sheetDiff} sheets consumed for edited Job #${targetJobNumber}`
+                  : `Restored ${Math.abs(sheetDiff)} sheets from edited Job #${targetJobNumber}`,
+                userId: validUserId,
+              },
+            });
+          }
+
+          updatedJobResult = await tx.jobProduction.update({
+            where: { id },
+            data: {
+              jobNumber: targetJobNumber,
+              customerName: targetCustomerName,
+              product: targetProduct,
+              orderedQuantity: targetOrderedQuantity,
+              printType: targetPrintType,
+              paperSize: targetPaperSize,
+              printSide: targetPrintSide,
+              mediaId: targetMediaId,
+              machineId: targetMachineId,
+              goodPrints: targetGoodPrints,
+              wastage: targetWastage,
+              reprint: targetReprint,
+              reprintType: targetReprintType,
+              sheetConsumption: calc.sheetConsumption,
+              machineClicks: calc.machineClicks,
+              unitCost: calc.unitCost,
+              totalCost: calc.totalCost,
+              gstAmount: calc.gstAmount,
+              grandTotalCost: calc.grandTotalCost,
+              wastageReasonId: targetWastageReasonId,
+              wastageReasonOther: targetWastageReasonOther,
+              remarks: targetRemarks,
+              productionDate: targetProductionDate,
+            },
+            include: {
+              media: { select: { id: true, name: true, gsm: true, size: true } },
+              machine: { select: { id: true, name: true } },
+              operator: { select: { id: true, name: true } },
+              wastageReason: { select: { id: true, reason: true } },
+            },
+          });
+
+          await tx.auditLog.create({
+            data: {
+              userId: validUserId,
+              action: 'JOB_UPDATED',
+              entity: 'JobProduction',
+              entityId: targetJobNumber,
+              newValue: {
+                jobNumber: targetJobNumber,
+                clicksDelta: calc.machineClicks - existingJob.machineClicks,
+                sheetsDelta: sheetDiff,
+                customer: targetCustomerName,
+                product: targetProduct,
+              },
+            },
+          });
+        });
+      } else {
+        // Media has changed
+        const oldMedia = await prisma.media.findUnique({ where: { id: oldMediaId } });
+        if (!oldMedia) throw new Error('Original media not found');
+
+        if (newMedia.currentStock < newConsumption) {
+          throw new Error(
+            `INSUFFICIENT STOCK: Selected media '${newMedia.name}' has ${newMedia.currentStock} sheets, but job requires ${newConsumption} sheets.`
+          );
+        }
+
+        const oldMediaNewStock = oldMedia.currentStock + oldConsumption;
+        const newMediaNewStock = newMedia.currentStock - newConsumption;
+
+        await prisma.$transaction(async (tx) => {
+          // Restore old media
+          await tx.media.update({
+            where: { id: oldMediaId },
+            data: { currentStock: oldMediaNewStock },
+          });
+
+          await tx.inventoryMovement.create({
+            data: {
+              mediaId: oldMediaId,
+              quantity: oldConsumption,
+              openingStock: oldMedia.currentStock,
+              closingStock: oldMediaNewStock,
+              movementType: 'STOCK_ADJUSTMENT',
+              referenceId: `EDIT-RESTORE-${targetJobNumber}`,
+              reason: `Restored ${oldConsumption} sheets (media changed on Job #${targetJobNumber})`,
+              userId: validUserId,
+            },
+          });
+
+          // Deduct from new media
+          await tx.media.update({
+            where: { id: targetMediaId },
+            data: { currentStock: newMediaNewStock },
+          });
+
+          await tx.inventoryMovement.create({
+            data: {
+              mediaId: targetMediaId,
+              quantity: -newConsumption,
+              openingStock: newMedia.currentStock,
+              closingStock: newMediaNewStock,
+              movementType: 'STOCK_OUT',
+              referenceId: `EDIT-OUT-${targetJobNumber}`,
+              reason: `Deducted ${newConsumption} sheets for edited Job #${targetJobNumber}`,
+              userId: validUserId,
+            },
+          });
+
+          updatedJobResult = await tx.jobProduction.update({
+            where: { id },
+            data: {
+              jobNumber: targetJobNumber,
+              customerName: targetCustomerName,
+              product: targetProduct,
+              orderedQuantity: targetOrderedQuantity,
+              printType: targetPrintType,
+              paperSize: targetPaperSize,
+              printSide: targetPrintSide,
+              mediaId: targetMediaId,
+              machineId: targetMachineId,
+              goodPrints: targetGoodPrints,
+              wastage: targetWastage,
+              reprint: targetReprint,
+              reprintType: targetReprintType,
+              sheetConsumption: calc.sheetConsumption,
+              machineClicks: calc.machineClicks,
+              unitCost: calc.unitCost,
+              totalCost: calc.totalCost,
+              gstAmount: calc.gstAmount,
+              grandTotalCost: calc.grandTotalCost,
+              wastageReasonId: targetWastageReasonId,
+              wastageReasonOther: targetWastageReasonOther,
+              remarks: targetRemarks,
+              productionDate: targetProductionDate,
+            },
+            include: {
+              media: { select: { id: true, name: true, gsm: true, size: true } },
+              machine: { select: { id: true, name: true } },
+              operator: { select: { id: true, name: true } },
+              wastageReason: { select: { id: true, reason: true } },
+            },
+          });
+
+          await tx.auditLog.create({
+            data: {
+              userId: validUserId,
+              action: 'JOB_UPDATED',
+              entity: 'JobProduction',
+              entityId: targetJobNumber,
+              newValue: {
+                jobNumber: targetJobNumber,
+                mediaChangedFrom: oldMedia.name,
+                mediaChangedTo: newMedia.name,
+                sheetsConsumed: newConsumption,
+              },
+            },
+          });
+        });
+      }
+
+      const j = updatedJobResult;
+      return {
+        ...j,
+        unitCost: Number(j.unitCost),
+        totalCost: Number(j.totalCost),
+        gstAmount: Number(j.gstAmount),
+        grandTotalCost: Number(j.grandTotalCost),
+        mediaName: j.media ? `${j.media.gsm} GSM ${j.media.name} (${j.media.size})` : 'Media',
+        machineName: j.machine?.name || 'Konica Minolta C3070',
+        operatorName: j.operator?.name || 'Operator',
+        wastageReasonName: j.wastageReason?.reason,
+        productionDate: j.productionDate.toISOString().split('T')[0],
+        createdAt: j.createdAt.toISOString(),
+        updatedAt: j.updatedAt.toISOString(),
+      };
     },
 
     delete: async (id: string, userId?: string) => {

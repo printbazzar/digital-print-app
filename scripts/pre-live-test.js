@@ -247,6 +247,46 @@ async function runPreLiveTests() {
     assert(searchByCustRes.ok && searchByCustData.jobs?.some(j => j.customerName === testJobCustomer), 'Search by Customer Name', `Found Customer: ${testJobCustomer}`);
 
     // -------------------------------------------------------------
+    // PHASE 6.5: JOB EDITING, LIVE RECALCULATION & STOCK RECONCILIATION
+    // -------------------------------------------------------------
+    console.log('\n✏️ [PHASE 6.5] JOB EDITING, AUTO RECALCULATION & STOCK RECONCILIATION');
+
+    // Edit 1: Increase Good Prints from 50 -> 60 (+10 sheets, +20 clicks)
+    const edit1Res = await fetch(`${BASE_URL}/api/jobs/${createdJob.id}`, {
+      method: 'PATCH',
+      headers: ownerHeaders,
+      body: JSON.stringify({
+        goodPrints: 60,
+        product: 'Visiting Cards 300 GSM (Edited)',
+        remarks: 'Customer increased order quantity',
+      }),
+    });
+    const edit1Data = await edit1Res.json();
+    assert(edit1Res.ok && edit1Data.job?.goodPrints === 60, 'Job Edit Execution (PATCH /api/jobs/[id])', `Good Prints: ${edit1Data.job?.goodPrints}`);
+    assert(edit1Data.job?.sheetConsumption === 65, 'Auto Recalculate Sheet Consumption on Edit', `Expected 65, got ${edit1Data.job?.sheetConsumption}`);
+    assert(edit1Data.job?.machineClicks === 130, 'Auto Recalculate Machine Clicks on Edit', `Expected 130 clicks, got ${edit1Data.job?.machineClicks}`);
+
+    const stockAfterEdit1 = (await (await fetch(`${BASE_URL}/api/media`, { headers: ownerHeaders })).json()).media.find(m => m.id === targetMedia.id).currentStock;
+    assert(stockAfterEdit1 === postJobMediaStock - 10, 'Live Stock Deduction for Increased Sheet Consumption (+10)', `Stock: ${postJobMediaStock} → ${stockAfterEdit1}`);
+
+    // Edit 2: Decrease Good Prints from 60 -> 40 (Refunds 20 sheets to stock!)
+    const edit2Res = await fetch(`${BASE_URL}/api/jobs/${createdJob.id}`, {
+      method: 'PATCH',
+      headers: ownerHeaders,
+      body: JSON.stringify({
+        goodPrints: 40,
+        remarks: 'Corrected good count down',
+      }),
+    });
+    const edit2Data = await edit2Res.json();
+    assert(edit2Res.ok && edit2Data.job?.goodPrints === 40, 'Job Edit Reduction Execution', `Good Prints: ${edit2Data.job?.goodPrints}`);
+    assert(edit2Data.job?.sheetConsumption === 45, 'Auto Recalculate Reduced Sheets (40 + 5 waste)', `Consumption: ${edit2Data.job?.sheetConsumption}`);
+    assert(edit2Data.job?.machineClicks === 90, 'Auto Recalculate Reduced Machine Clicks (45 * 2)', `Clicks: ${edit2Data.job?.machineClicks}`);
+
+    const stockAfterEdit2 = (await (await fetch(`${BASE_URL}/api/media`, { headers: ownerHeaders })).json()).media.find(m => m.id === targetMedia.id).currentStock;
+    assert(stockAfterEdit2 === stockAfterEdit1 + 20, 'Live Stock Refund on Reduced Sheet Consumption (+20 sheets restored)', `Stock: ${stockAfterEdit1} → ${stockAfterEdit2}`);
+
+    // -------------------------------------------------------------
     // PHASE 7: JOB DELETION & STOCK REFUND ROLLBACK
     // -------------------------------------------------------------
     console.log('\n🗑️ [PHASE 7] JOB DELETION & INVENTORY STOCK ROLLBACK');
