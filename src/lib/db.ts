@@ -1335,6 +1335,172 @@ export const db = {
       };
     },
 
+    update: async (id: string, updates: any, userId?: string) => {
+      const counter = await prisma.dailyMachineCounter.findUnique({
+        where: { id },
+        include: { machine: true, closedBy: true },
+      });
+      if (!counter) throw new Error('Counter record not found');
+
+      let validUserId = userId;
+      if (!validUserId) {
+        const firstUser = await prisma.user.findFirst();
+        validUserId = firstUser?.id || 'usr-owner-001';
+      }
+
+      const newOpening = updates.openingCounter !== undefined ? Math.max(0, Math.floor(Number(updates.openingCounter))) : counter.openingCounter;
+
+      let newClosing: number | null = null;
+      if (updates.closingCounter !== undefined) {
+        if (updates.closingCounter === null || updates.closingCounter === '') {
+          newClosing = null;
+        } else {
+          newClosing = Math.max(newOpening, Math.floor(Number(updates.closingCounter)));
+        }
+      } else {
+        newClosing = counter.closingCounter;
+      }
+
+      let machinePrintCount: number | null = null;
+      let difference = 0;
+      let isMatched = true;
+
+      if (newClosing !== null) {
+        const recon = reconcileMachineCounter({
+          openingCounter: newOpening,
+          closingCounter: newClosing,
+          totalJobClicks: counter.totalJobClicks,
+        });
+        machinePrintCount = recon.machinePrintCount;
+        difference = recon.difference;
+        isMatched = recon.isMatched;
+
+        if (!isMatched && updates.isClosed && !(updates.mismatchReason?.trim() || counter.mismatchReason?.trim())) {
+          throw new Error(`MACHINE COUNT MISMATCH: Difference of ${difference} clicks detected. Please provide an explanatory reason.`);
+        }
+      }
+
+      const isClosed = updates.isClosed !== undefined ? Boolean(updates.isClosed) : (newClosing !== null ? counter.isClosed : false);
+      const mismatchReason = updates.mismatchReason !== undefined ? (updates.mismatchReason?.trim() || null) : counter.mismatchReason;
+
+      const [updated] = await prisma.$transaction([
+        prisma.dailyMachineCounter.update({
+          where: { id },
+          data: {
+            openingCounter: newOpening,
+            closingCounter: newClosing,
+            machinePrintCount,
+            difference,
+            isMatched,
+            mismatchReason,
+            isClosed,
+            closedById: isClosed ? validUserId : null,
+            closedAt: isClosed ? (counter.closedAt || new Date()) : null,
+          },
+          include: { closedBy: true },
+        }),
+        ...(isClosed && newClosing !== null ? [
+          prisma.machine.update({
+            where: { id: counter.machineId },
+            data: { currentCounter: newClosing },
+          }),
+        ] : []),
+        prisma.auditLog.create({
+          data: {
+            userId: validUserId,
+            action: 'COUNTER_UPDATED',
+            entity: 'DailyMachineCounter',
+            entityId: counter.id,
+            newValue: {
+              date: counter.date.toISOString().split('T')[0],
+              oldOpening: counter.openingCounter,
+              newOpening,
+              oldClosing: counter.closingCounter,
+              newClosing,
+              isClosed,
+              mismatchReason,
+            },
+          },
+        }),
+      ]);
+
+      return {
+        ...updated,
+        date: updated.date.toISOString().split('T')[0],
+        closedByName: updated.closedBy?.name,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      };
+    },
+
+    delete: async (id: string, userId?: string) => {
+      const counter = await prisma.dailyMachineCounter.findUnique({
+        where: { id },
+        include: { machine: true },
+      });
+      if (!counter) throw new Error('Counter record not found');
+
+      let validUserId = userId;
+      if (!validUserId) {
+        const firstUser = await prisma.user.findFirst();
+        validUserId = firstUser?.id || 'usr-owner-001';
+      }
+
+      const dateStr = counter.date.toISOString().split('T')[0];
+
+      await prisma.$transaction(async (tx) => {
+        // 1. Unlink any jobs referencing this dailyCounterId
+        await tx.jobProduction.updateMany({
+          where: { dailyCounterId: id },
+          data: { dailyCounterId: null },
+        });
+
+        // 2. Delete the counter record
+        await tx.dailyMachineCounter.delete({
+          where: { id },
+        });
+
+        // 3. Rollback machine currentCounter to latest remaining closed day
+        const latestRemaining = await tx.dailyMachineCounter.findFirst({
+          where: {
+            machineId: counter.machineId,
+            isClosed: true,
+            id: { not: id },
+          },
+          orderBy: { date: 'desc' },
+        });
+
+        const restoredCounter = latestRemaining?.closingCounter || counter.openingCounter || counter.machine.initialCounter;
+        await tx.machine.update({
+          where: { id: counter.machineId },
+          data: { currentCounter: restoredCounter },
+        });
+
+        // 4. Create Audit Log
+        await tx.auditLog.create({
+          data: {
+            userId: validUserId,
+            action: 'COUNTER_DELETED',
+            entity: 'DailyMachineCounter',
+            entityId: counter.id,
+            newValue: {
+              date: dateStr,
+              deletedOpening: counter.openingCounter,
+              deletedClosing: counter.closingCounter,
+              machineRestoredCounter: restoredCounter,
+              reason: 'Wrong counter entry deleted by user',
+            },
+          },
+        });
+      });
+
+      return {
+        success: true,
+        message: `Counter entry for ${dateStr} deleted successfully. You can now enter a fresh count.`,
+        date: dateStr,
+      };
+    },
+
     list: async (machineId?: string) => {
       try {
         const list = await prisma.dailyMachineCounter.findMany({
