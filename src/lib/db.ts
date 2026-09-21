@@ -15,6 +15,7 @@ import {
   INITIAL_WASTAGE_REASONS,
   INITIAL_MEDIA,
 } from './seed-data';
+import { findBuiltInUser, BUILT_IN_USERS } from './auth';
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -32,45 +33,91 @@ export const db = {
   // --- USERS ---
   users: {
     findByEmail: async (email: string) => {
+      const clean = (email || '').toLowerCase().trim();
+      const builtIn = findBuiltInUser(clean);
+
       try {
-        let user = await prisma.user.findUnique({
-          where: { email: email.toLowerCase() },
+        let user = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { email: clean },
+              ...(builtIn ? [{ email: builtIn.email }] : []),
+            ],
+          },
         });
 
-        if (!user && (email.toLowerCase() === 'owner@printbazzar.com' || email.toLowerCase() === 'operator@printbazzar.com')) {
-          const isOwner = email.toLowerCase() === 'owner@printbazzar.com';
-          const pass = await bcrypt.hash(isOwner ? 'owner123' : 'operator123', 10);
-          user = await prisma.user.create({
-            data: {
-              email: email.toLowerCase(),
-              name: isOwner ? 'Owner (Print Bazzar)' : 'Operator 1 (Konica C3070)',
-              passwordHash: pass,
-              role: isOwner ? 'OWNER' : 'OPERATOR',
-            },
-          });
+        if (!user && builtIn) {
+          try {
+            user = await prisma.user.create({
+              data: {
+                id: builtIn.id,
+                email: builtIn.email,
+                name: builtIn.name,
+                passwordHash: builtIn.passwordHash,
+                role: builtIn.role,
+                isActive: true,
+              },
+            });
+          } catch {
+            // DB write failed (e.g. offline/paused)
+          }
         }
 
-        return user ? {
-          ...user,
-          createdAt: user.createdAt.toISOString(),
-          updatedAt: user.updatedAt.toISOString(),
-        } : undefined;
+        if (user) {
+          return {
+            ...user,
+            createdAt: user.createdAt.toISOString(),
+            updatedAt: user.updatedAt.toISOString(),
+          };
+        }
       } catch (err) {
-        console.error('Database query error in findByEmail:', err);
-        return undefined;
+        console.warn('Database query error in findByEmail, using builtIn fallback:', err);
       }
+
+      if (builtIn) {
+        return {
+          id: builtIn.id,
+          email: builtIn.email,
+          name: builtIn.name,
+          passwordHash: builtIn.passwordHash,
+          role: builtIn.role,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      return undefined;
     },
     findById: async (id: string) => {
       try {
         const user = await prisma.user.findUnique({ where: { id } });
-        return user ? {
-          ...user,
-          createdAt: user.createdAt.toISOString(),
-          updatedAt: user.updatedAt.toISOString(),
-        } : undefined;
-      } catch {
-        return undefined;
+        if (user) {
+          return {
+            ...user,
+            createdAt: user.createdAt.toISOString(),
+            updatedAt: user.updatedAt.toISOString(),
+          };
+        }
+      } catch (err) {
+        console.warn('Database query error in findById, checking builtIn fallback:', err);
       }
+
+      const builtIn = BUILT_IN_USERS.find((u) => u.id === id);
+      if (builtIn) {
+        return {
+          id: builtIn.id,
+          email: builtIn.email,
+          name: builtIn.name,
+          passwordHash: builtIn.passwordHash,
+          role: builtIn.role,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      return undefined;
     },
     list: async () => {
       try {
@@ -82,19 +129,32 @@ export const db = {
           },
           orderBy: [{ role: 'asc' }, { createdAt: 'desc' }],
         });
-        return list.map((u) => ({
-          id: u.id,
-          email: u.email,
-          name: u.name,
-          role: u.role,
-          isActive: u.isActive,
-          jobsCount: u._count.jobs,
-          createdAt: u.createdAt.toISOString(),
-          updatedAt: u.updatedAt.toISOString(),
-        }));
-      } catch {
-        return [];
+        if (list.length > 0) {
+          return list.map((u) => ({
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            role: u.role,
+            isActive: u.isActive,
+            jobsCount: u._count.jobs,
+            createdAt: u.createdAt.toISOString(),
+            updatedAt: u.updatedAt.toISOString(),
+          }));
+        }
+      } catch (err) {
+        console.warn('Database query error in list users, using builtIn fallback:', err);
       }
+
+      return BUILT_IN_USERS.map((u) => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        isActive: u.isActive,
+        jobsCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
     },
     create: async (data: { email: string; name: string; password: string; role?: 'OWNER' | 'OPERATOR' }) => {
       const existing = await prisma.user.findUnique({
@@ -1206,62 +1266,86 @@ export const db = {
       const dateOnlyStr = dateStr || new Date().toISOString().split('T')[0];
       const targetDate = new Date(`${dateOnlyStr}T00:00:00.000Z`);
 
-      // Aggregate today's job clicks
-      const jobs = await prisma.jobProduction.findMany({
-        where: { machineId },
-      });
-      const todaysJobs = jobs.filter((j) => j.productionDate.toISOString().split('T')[0] === dateOnlyStr);
-      const totalJobClicksToday = todaysJobs.reduce((acc, j) => acc + j.machineClicks, 0);
+      try {
+        // Aggregate today's job clicks
+        const jobs = await prisma.jobProduction.findMany({
+          where: { machineId },
+        });
+        const todaysJobs = jobs.filter((j) => j.productionDate.toISOString().split('T')[0] === dateOnlyStr);
+        const totalJobClicksToday = todaysJobs.reduce((acc, j) => acc + j.machineClicks, 0);
 
-      // Find existing counter for this machine & date
-      let counter = await prisma.dailyMachineCounter.findFirst({
-        where: {
-          machineId,
-          date: targetDate,
-        },
-      });
-
-      if (!counter) {
-        // Find latest previous closing counter for opening counter reference
-        const prevCounter = await prisma.dailyMachineCounter.findFirst({
+        // Find existing counter for this machine & date
+        let counter = await prisma.dailyMachineCounter.findFirst({
           where: {
             machineId,
-            date: { lt: targetDate },
-            closingCounter: { not: null },
+            date: targetDate,
           },
-          orderBy: { date: 'desc' },
         });
 
-        const machine = await prisma.machine.findUnique({ where: { id: machineId } });
-        const openingCounter = prevCounter?.closingCounter || machine?.currentCounter || INITIAL_MACHINE.initialCounter;
+        if (!counter) {
+          // Find latest previous closing counter for opening counter reference
+          const prevCounter = await prisma.dailyMachineCounter.findFirst({
+            where: {
+              machineId,
+              date: { lt: targetDate },
+              closingCounter: { not: null },
+            },
+            orderBy: { date: 'desc' },
+          });
 
-        counter = await prisma.dailyMachineCounter.create({
-          data: {
+          const machine = await prisma.machine.findUnique({ where: { id: machineId } });
+          const openingCounter = prevCounter?.closingCounter || machine?.currentCounter || INITIAL_MACHINE.initialCounter;
+
+          counter = await prisma.dailyMachineCounter.create({
+            data: {
+              machineId,
+              date: targetDate,
+              openingCounter,
+              totalJobClicks: totalJobClicksToday,
+              difference: 0,
+              isMatched: true,
+              isClosed: false,
+            },
+          });
+        } else if (!counter.isClosed) {
+          counter = await prisma.dailyMachineCounter.update({
+            where: { id: counter.id },
+            data: { totalJobClicks: totalJobClicksToday },
+          });
+        }
+
+        return {
+          counter: {
+            ...counter,
+            date: dateOnlyStr,
+            createdAt: counter.createdAt.toISOString(),
+            updatedAt: counter.updatedAt.toISOString(),
+          },
+          totalJobClicksToday,
+        };
+      } catch (err) {
+        console.warn('getOrInitToday error, using fallback:', err);
+        return {
+          counter: {
+            id: `cnt-${dateOnlyStr}`,
             machineId,
-            date: targetDate,
-            openingCounter,
-            totalJobClicks: totalJobClicksToday,
+            date: dateOnlyStr,
+            openingCounter: INITIAL_MACHINE.initialCounter,
+            closingCounter: null as number | null,
+            machinePrintCount: null as number | null,
+            totalJobClicks: 0,
             difference: 0,
             isMatched: true,
+            mismatchReason: null as string | null,
             isClosed: false,
+            closedById: null as string | null,
+            closedAt: null as Date | null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
           },
-        });
-      } else if (!counter.isClosed) {
-        counter = await prisma.dailyMachineCounter.update({
-          where: { id: counter.id },
-          data: { totalJobClicks: totalJobClicksToday },
-        });
+          totalJobClicksToday: 0,
+        };
       }
-
-      return {
-        counter: {
-          ...counter,
-          date: dateOnlyStr,
-          createdAt: counter.createdAt.toISOString(),
-          updatedAt: counter.updatedAt.toISOString(),
-        },
-        totalJobClicksToday,
-      };
     },
 
     closeDay: async (params: any) => {
