@@ -143,10 +143,9 @@ async function syncToGitHub(commitMessage = 'Automated update from Print Bazzar 
     });
   }
 
-  // 5. Create new tree
-  console.log('3️⃣ Creating tree on GitHub...');
+  // 5. Create new clean 1:1 tree (without base_tree so deleted/ghost files are purged)
+  console.log('3️⃣ Creating clean 1:1 tree on GitHub...');
   const newTree = await githubRequest('/git/trees', 'POST', {
-    base_tree: baseTreeSha,
     tree: treeItems,
   });
 
