@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import NotificationBell from './NotificationBell';
-import ChangePasswordModal from './ChangePasswordModal';
 import {
   LayoutDashboard,
   Printer,
@@ -14,19 +13,16 @@ import {
   FileSpreadsheet,
   Settings,
   ShieldCheck,
-  LogOut,
   Menu,
   X,
   User,
   Users,
-  KeyRound,
 } from 'lucide-react';
 
 export default function Navbar() {
-  const { user, logout, isOwner } = useAuth();
+  const { user, isOwner } = useAuth();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   if (pathname === '/login') return null;
 
@@ -105,33 +101,11 @@ export default function Navbar() {
                     <span className="text-xs font-bold text-slate-100 leading-tight">
                       {user.name}
                     </span>
-                    <span
-                      className={`text-[10px] font-bold px-1.5 py-0.2 rounded uppercase ${
-                        user.role === 'OWNER'
-                          ? 'bg-amber-400/20 text-yellow-300 border border-yellow-400/40'
-                          : 'bg-slate-800 text-slate-300 border border-slate-700'
-                      }`}
-                    >
-                      {user.role}
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-400/20 text-yellow-300 border border-yellow-400/40 uppercase flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
+                      OWNER
                     </span>
                   </div>
-
-                  {/* Change Password Button */}
-                  <button
-                    onClick={() => setChangePasswordOpen(true)}
-                    className="p-1.5 text-slate-400 hover:text-yellow-400 hover:bg-slate-900 rounded-lg transition"
-                    title="Change Password"
-                  >
-                    <KeyRound className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    onClick={logout}
-                    className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-900 rounded-lg transition"
-                    title="Logout"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
                 </div>
               )}
 
@@ -184,47 +158,18 @@ export default function Navbar() {
                       <div className="text-xs font-bold text-white">
                         {user.name}
                       </div>
-                      <div className="text-[10px] text-yellow-400 font-medium">
-                        {user.role}
+                      <div className="text-[10px] text-green-400 font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
+                        Direct Access Active
                       </div>
                     </div>
                   </div>
-                </div>
-
-                <div className="flex items-center space-x-2 pt-2">
-                  <button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      setChangePasswordOpen(true);
-                    }}
-                    className="flex-1 flex items-center justify-center space-x-1.5 text-xs text-yellow-400 font-bold px-3 py-2 rounded-lg bg-yellow-400/10 border border-yellow-400/30"
-                  >
-                    <KeyRound className="w-3.5 h-3.5" />
-                    <span>Change Password</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      logout();
-                    }}
-                    className="flex items-center space-x-1 text-xs text-red-400 font-semibold px-3 py-2 rounded-lg bg-red-950/40 border border-red-800/50"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Logout</span>
-                  </button>
                 </div>
               </div>
             )}
           </div>
         )}
       </header>
-
-      {/* Change Password Modal */}
-      <ChangePasswordModal
-        isOpen={changePasswordOpen}
-        onClose={() => setChangePasswordOpen(false)}
-      />
     </>
   );
 }

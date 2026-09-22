@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
   // Low stock media
   const allMedia = await db.media.list();
   const lowStockMedia = allMedia.filter(
-    (m) => m.currentStock <= m.minimumStockLevel
+    (m: any) => m.currentStock <= m.minimumStockLevel
   );
 
   // 14-day Production and Wastage Trend
@@ -116,11 +116,11 @@ export async function GET(request: NextRequest) {
     const d = subDays(now, i);
     const dStr = format(d, 'yyyy-MM-dd');
     const dayLabel = format(d, 'dd MMM');
-    const dayJobs = trendJobs.filter((j) => j.productionDate === dStr);
+    const dayJobs = trendJobs.filter((j: any) => j.productionDate === dStr);
 
-    const dayClicks = dayJobs.reduce((acc, j) => acc + j.machineClicks, 0);
-    const daySheets = dayJobs.reduce((acc, j) => acc + j.sheetConsumption, 0);
-    const dayWastage = dayJobs.reduce((acc, j) => acc + j.wastage, 0);
+    const dayClicks = dayJobs.reduce((acc: number, j: any) => acc + (j.machineClicks || 0), 0);
+    const daySheets = dayJobs.reduce((acc: number, j: any) => acc + (j.sheetConsumption || 0), 0);
+    const dayWastage = dayJobs.reduce((acc: number, j: any) => acc + (j.wastage || 0), 0);
     const dayWastagePct = calculateWastagePercentage(dayWastage, daySheets);
 
     trendDays.push({
