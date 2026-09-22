@@ -33,7 +33,14 @@ export const prisma =
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 const DB_JSON_PATH = path.join(process.cwd(), 'data', 'db.json');
+const BACKUPS_DIR = path.join(process.cwd(), 'data', 'backups');
 let memoryDb: any = null;
+
+// Determine if running purely on local machine without external cloud dependencies
+export const IS_LOCAL_SERVER =
+  process.env.STORAGE_MODE === 'local' ||
+  !process.env.DATABASE_URL ||
+  process.env.DATABASE_URL.includes('gpyzegwmfzacrrwsgzdk');
 
 export function readDbJson(): any {
   if (memoryDb) return memoryDb;
@@ -64,7 +71,17 @@ export function writeDbJson(data: any): void {
   try {
     const dir = path.dirname(DB_JSON_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(DB_JSON_PATH, JSON.stringify(data, null, 2), 'utf8');
+
+    // 1. Atomic write: write to temp file then rename
+    const tmpFile = path.join(dir, `db-${Date.now()}.tmp`);
+    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf8');
+    fs.renameSync(tmpFile, DB_JSON_PATH);
+
+    // 2. Automated daily backup rotation (never lose entries)
+    if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+    const today = new Date().toISOString().split('T')[0];
+    const dailyBackupFile = path.join(BACKUPS_DIR, `db-${today}.json`);
+    fs.copyFileSync(DB_JSON_PATH, dailyBackupFile);
   } catch (err) {
     console.warn('Could not write to db.json (persisting in memory):', err);
   }
@@ -453,6 +470,25 @@ export const db = {
           updatedAt: updated.updatedAt.toISOString(),
         };
       } catch {
+        const local = readDbJson();
+        const r = (local.rates || []).find((x: any) => x.id === id);
+        if (r) {
+          if (rate !== undefined) r.rate = Number(rate);
+          if (tier2Rate !== undefined) r.tier2Rate = Number(tier2Rate);
+          if (tierThreshold !== undefined) r.tierThreshold = Number(tierThreshold);
+          if (gstPercent !== undefined) r.gstPercent = Number(gstPercent);
+          r.updatedAt = new Date().toISOString();
+          writeDbJson(local);
+          return {
+            ...r,
+            rate: Number(r.rate),
+            tier2Rate: r.tier2Rate !== null && r.tier2Rate !== undefined ? Number(r.tier2Rate) : Number(r.rate),
+            tierThreshold: r.tierThreshold,
+            gstPercent: Number(r.gstPercent || 18),
+            createdAt: r.createdAt || new Date().toISOString(),
+            updatedAt: r.updatedAt || new Date().toISOString(),
+          };
+        }
         return null;
       }
     },
