@@ -601,23 +601,6 @@
       "closedAt": null,
       "createdAt": "2026-09-22T15:23:30.030Z",
       "updatedAt": "2026-09-22T15:23:30.030Z"
-    },
-    {
-      "id": "dc-1790161394443",
-      "machineId": "mach-c3070-001",
-      "date": "2026-09-23",
-      "openingCounter": 1067426,
-      "closingCounter": null,
-      "machinePrintCount": null,
-      "totalJobClicks": 0,
-      "difference": 0,
-      "isMatched": true,
-      "mismatchReason": null,
-      "isClosed": false,
-      "closedById": null,
-      "closedAt": null,
-      "createdAt": "2026-09-23T11:03:14.443Z",
-      "updatedAt": "2026-09-23T11:03:14.443Z"
     }
   ],
   "notifications": [],
