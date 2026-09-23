@@ -136,5 +136,8 @@ export function requireAuth(request: NextRequest): { user: AuthPayload; error?: 
 
 export function requireOwner(request: NextRequest): { user: AuthPayload; error?: string } {
   const user = getSessionFromRequest(request);
+  if (!user || user.role !== 'OWNER') {
+    return { user, error: 'Forbidden: Owner privilege required' };
+  }
   return { user };
 }

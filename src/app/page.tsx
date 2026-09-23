@@ -78,6 +78,10 @@ export default function DashboardPage() {
     if (!authLoading && !user) {
       router.push('/login');
     } else if (user) {
+      if (user.role === 'OPERATOR') {
+        router.replace('/production');
+        return;
+      }
       fetchDashboardData(filter);
     }
   }, [user, authLoading, filter, token]);
@@ -103,7 +107,7 @@ export default function DashboardPage() {
     }
   };
 
-  if (authLoading || !user) {
+  if (authLoading || !user || !isOwner) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-400"></div>

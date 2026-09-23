@@ -90,7 +90,7 @@ export default function StaffManagementPage() {
       router.push('/login');
     } else if (user) {
       if (!isOwner) {
-        router.push('/');
+        router.replace('/production');
       } else {
         fetchStaff();
       }

@@ -17,29 +17,33 @@ import {
   X,
   User,
   Users,
+  LogOut,
 } from 'lucide-react';
 
 export default function Navbar() {
-  const { user, isOwner } = useAuth();
+  const { user, isOwner, logout } = useAuth();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  if (pathname === '/login') return null;
+  if (pathname === '/login' || !user) return null;
 
-  const navLinks = [
-    { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/production', label: 'Production Entry', icon: Printer },
-    { href: '/daily-closing', label: 'Machine Counter', icon: Gauge },
-    { href: '/inventory', label: 'Inventory', icon: Boxes },
-    { href: '/reports', label: 'Reports', icon: FileSpreadsheet },
-    ...(isOwner
-      ? [
-          { href: '/staff', label: 'Staff / Operators', icon: Users },
-          { href: '/masters', label: 'Masters', icon: Settings },
-          { href: '/audit', label: 'Audit Logs', icon: ShieldCheck },
-        ]
-      : []),
-  ];
+  // Staff (OPERATOR) strictly sees only Job Entry and Inventory
+  // Owner sees all 8 management modules
+  const navLinks = isOwner
+    ? [
+        { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+        { href: '/production', label: 'Production Entry', icon: Printer },
+        { href: '/daily-closing', label: 'Machine Counter', icon: Gauge },
+        { href: '/inventory', label: 'Inventory', icon: Boxes },
+        { href: '/reports', label: 'Reports', icon: FileSpreadsheet },
+        { href: '/staff', label: 'Staff / Operators', icon: Users },
+        { href: '/masters', label: 'Masters', icon: Settings },
+        { href: '/audit', label: 'Audit Logs', icon: ShieldCheck },
+      ]
+    : [
+        { href: '/production', label: 'Job Entry (Production)', icon: Printer },
+        { href: '/inventory', label: 'Inventory (Stock)', icon: Boxes },
+      ];
 
   return (
     <>
@@ -48,7 +52,10 @@ export default function Navbar() {
           <div className="flex items-center justify-between h-16">
             {/* Brand */}
             <div className="flex items-center space-x-6">
-              <Link href="/" className="flex items-center space-x-3 group py-1">
+              <Link
+                href={isOwner ? '/' : '/production'}
+                className="flex items-center space-x-3 group py-1"
+              >
                 <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-full bg-slate-900 p-0.5 flex items-center justify-center shadow-lg shadow-yellow-400/20 group-hover:scale-105 transition transform overflow-hidden border-2 border-yellow-400 flex-shrink-0">
                   <img
                     src="/logo-icon.png"
@@ -92,22 +99,38 @@ export default function Navbar() {
             </div>
 
             {/* Right Header Actions */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2 sm:space-x-3">
               <NotificationBell />
 
-              {user && (
-                <div className="hidden sm:flex items-center pl-3 border-l border-slate-800 space-x-2.5">
-                  <div className="flex flex-col items-end">
-                    <span className="text-xs font-bold text-slate-100 leading-tight">
-                      {user.name}
+              {/* User Profile & Role Badge */}
+              <div className="flex items-center pl-2 sm:pl-3 border-l border-slate-800 space-x-2">
+                <div className="hidden sm:flex flex-col items-end">
+                  <span className="text-xs font-bold text-slate-100 leading-tight">
+                    {user.name}
+                  </span>
+                  {isOwner ? (
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-400/20 text-yellow-300 border border-yellow-400/40 uppercase flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 inline-block"></span>
+                      👑 OWNER (Full Access)
                     </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-400/20 text-yellow-300 border border-yellow-400/40 uppercase flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
-                      OWNER
+                  ) : (
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/40 uppercase flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block"></span>
+                      👷 STAFF (Job & Inventory)
                     </span>
-                  </div>
+                  )}
                 </div>
-              )}
+
+                {/* Log Out Button */}
+                <button
+                  onClick={logout}
+                  title="Sign Out / Switch Account"
+                  className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-red-300 hover:text-red-100 hover:bg-red-950/60 border border-red-800/50 transition cursor-pointer active:scale-95"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-red-400" />
+                  <span className="hidden sm:inline">Log Out</span>
+                </button>
+              </div>
 
               {/* Mobile Menu Toggle */}
               <button
@@ -150,7 +173,7 @@ export default function Navbar() {
             })}
 
             {user && (
-              <div className="pt-3 mt-3 border-t border-slate-800 space-y-2">
+              <div className="pt-3 mt-3 border-t border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <User className="w-4 h-4 text-yellow-400" />
@@ -158,13 +181,23 @@ export default function Navbar() {
                       <div className="text-xs font-bold text-white">
                         {user.name}
                       </div>
-                      <div className="text-[10px] text-green-400 font-bold flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block"></span>
-                        Direct Access Active
+                      <div className="text-[10px] font-bold text-slate-300">
+                        {isOwner ? '👑 Owner (Full Access)' : '👷 Staff (Job Entry & Inventory)'}
                       </div>
                     </div>
                   </div>
                 </div>
+
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    logout();
+                  }}
+                  className="w-full flex items-center justify-center space-x-2 py-2.5 bg-red-950/50 hover:bg-red-900/60 border border-red-800/60 text-red-200 text-xs font-bold rounded-lg transition"
+                >
+                  <LogOut className="w-4 h-4 text-red-400" />
+                  <span>Sign Out / Switch Account</span>
+                </button>
               </div>
             )}
           </div>

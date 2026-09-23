@@ -118,6 +118,10 @@ export default function DailyClosingPage() {
     if (!authLoading && !user) {
       router.push('/login');
     } else if (user) {
+      if (user.role === 'OPERATOR') {
+        router.replace('/production');
+        return;
+      }
       fetchCounterInfo();
     }
   }, [user, authLoading]);
@@ -349,7 +353,7 @@ export default function DailyClosingPage() {
     }
   };
 
-  if (authLoading) return null;
+  if (authLoading || !user || !isOwner) return null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">

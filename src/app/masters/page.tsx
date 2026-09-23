@@ -101,8 +101,10 @@ export default function MastersPage() {
   };
 
   useEffect(() => {
-    if (!authLoading && (!user || !isOwner)) {
+    if (!authLoading && !user) {
       router.push('/login');
+    } else if (user && !isOwner) {
+      router.replace('/production');
     } else if (user && isOwner) {
       fetchMasters();
     }

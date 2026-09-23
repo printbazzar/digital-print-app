@@ -32,7 +32,7 @@ export default function AuditLogsPage() {
     if (!authLoading && !user) {
       router.push('/login');
     } else if (user && !isOwner) {
-      router.push('/');
+      router.replace('/production');
     } else if (user && isOwner) {
       fetchLogs();
     }

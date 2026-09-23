@@ -94,6 +94,43 @@ export const db = {
       const clean = (email || '').toLowerCase().trim();
       const builtIn = findBuiltInUser(clean);
 
+      if (IS_LOCAL_SERVER) {
+        const local = readDbJson();
+        const users = local.users || BUILT_IN_USERS;
+        const matched = users.find(
+          (u: any) =>
+            u.email?.toLowerCase() === clean ||
+            u.id === clean ||
+            (builtIn &&
+              (u.email?.toLowerCase() === builtIn.email?.toLowerCase() ||
+                u.id === builtIn.id))
+        );
+        if (matched) {
+          return {
+            id: matched.id,
+            email: matched.email,
+            name: matched.name,
+            passwordHash: matched.passwordHash,
+            role: matched.role,
+            isActive: matched.isActive !== false,
+            createdAt: matched.createdAt || new Date().toISOString(),
+            updatedAt: matched.updatedAt || new Date().toISOString(),
+          };
+        }
+        if (builtIn) {
+          return {
+            id: builtIn.id,
+            email: builtIn.email,
+            name: builtIn.name,
+            passwordHash: builtIn.passwordHash,
+            role: builtIn.role,
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+        }
+      }
+
       try {
         let user = await prisma.user.findFirst({
           where: {
@@ -148,6 +185,24 @@ export const db = {
       return undefined;
     },
     findById: async (id: string) => {
+      if (IS_LOCAL_SERVER) {
+        const local = readDbJson();
+        const users = local.users || BUILT_IN_USERS;
+        const matched = users.find((u: any) => u.id === id);
+        if (matched) {
+          return {
+            id: matched.id,
+            email: matched.email,
+            name: matched.name,
+            passwordHash: matched.passwordHash,
+            role: matched.role,
+            isActive: matched.isActive !== false,
+            createdAt: matched.createdAt || new Date().toISOString(),
+            updatedAt: matched.updatedAt || new Date().toISOString(),
+          };
+        }
+      }
+
       try {
         const user = await prisma.user.findUnique({ where: { id } });
         if (user) {
@@ -178,6 +233,22 @@ export const db = {
       return undefined;
     },
     list: async () => {
+      if (IS_LOCAL_SERVER) {
+        const local = readDbJson();
+        const users = local.users || BUILT_IN_USERS;
+        const jobs = local.jobs || [];
+        return users.map((u: any) => ({
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          role: u.role,
+          isActive: u.isActive !== false,
+          jobsCount: jobs.filter((j: any) => j.operatorId === u.id).length,
+          createdAt: u.createdAt || new Date().toISOString(),
+          updatedAt: u.updatedAt || new Date().toISOString(),
+        }));
+      }
+
       try {
         const list = await prisma.user.findMany({
           include: {
@@ -215,6 +286,31 @@ export const db = {
       }));
     },
     create: async (data: { email: string; name: string; password: string; role?: 'OWNER' | 'OPERATOR' }) => {
+      if (IS_LOCAL_SERVER) {
+        const local = readDbJson();
+        if (!local.users) local.users = [...BUILT_IN_USERS];
+        const existing = local.users.find(
+          (u: any) => u.email?.toLowerCase() === data.email.toLowerCase().trim()
+        );
+        if (existing) {
+          throw new Error(`A user with email '${data.email}' already exists.`);
+        }
+        const passwordHash = await bcrypt.hash(data.password, 10);
+        const newUser = {
+          id: `usr-custom-${Date.now()}`,
+          email: data.email.toLowerCase().trim(),
+          name: data.name.trim(),
+          passwordHash,
+          role: data.role || 'OPERATOR',
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        local.users.push(newUser);
+        writeDbJson(local);
+        return newUser;
+      }
+
       const existing = await prisma.user.findUnique({
         where: { email: data.email.toLowerCase().trim() },
       });
@@ -244,6 +340,24 @@ export const db = {
       };
     },
     update: async (id: string, updates: { name?: string; email?: string; role?: 'OWNER' | 'OPERATOR'; password?: string; isActive?: boolean }) => {
+      if (IS_LOCAL_SERVER) {
+        const local = readDbJson();
+        if (!local.users) local.users = [...BUILT_IN_USERS];
+        const idx = local.users.findIndex((u: any) => u.id === id);
+        if (idx !== -1) {
+          if (updates.name) local.users[idx].name = updates.name.trim();
+          if (updates.email) local.users[idx].email = updates.email.toLowerCase().trim();
+          if (updates.role) local.users[idx].role = updates.role;
+          if (updates.isActive !== undefined) local.users[idx].isActive = updates.isActive;
+          if (updates.password) {
+            local.users[idx].passwordHash = await bcrypt.hash(updates.password, 10);
+          }
+          local.users[idx].updatedAt = new Date().toISOString();
+          writeDbJson(local);
+          return local.users[idx];
+        }
+      }
+
       const dataToUpdate: any = {};
       if (updates.name) dataToUpdate.name = updates.name.trim();
       if (updates.email) dataToUpdate.email = updates.email.toLowerCase().trim();
@@ -269,6 +383,32 @@ export const db = {
       };
     },
     delete: async (id: string) => {
+      if (IS_LOCAL_SERVER) {
+        const local = readDbJson();
+        if (!local.users) local.users = [...BUILT_IN_USERS];
+        const user = local.users.find((u: any) => u.id === id);
+        if (!user) throw new Error('User not found');
+        if (user.email === 'owner@printbazzar.com') {
+          throw new Error('Primary Owner account cannot be deleted.');
+        }
+
+        const jobsCount = (local.jobs || []).filter((j: any) => j.operatorId === id).length;
+        if (jobsCount > 0) {
+          user.isActive = false;
+          user.updatedAt = new Date().toISOString();
+          writeDbJson(local);
+          return {
+            success: true,
+            message: `User '${user.name}' deactivated to preserve past job audit history.`,
+            user,
+          };
+        }
+
+        local.users = local.users.filter((u: any) => u.id !== id);
+        writeDbJson(local);
+        return { success: true, message: `User '${user.name}' deleted successfully.` };
+      }
+
       const user = await prisma.user.findUnique({ where: { id } });
       if (!user) throw new Error('User not found');
       if (user.email === 'owner@printbazzar.com') {
