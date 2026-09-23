@@ -156,7 +156,7 @@ export default function InventoryPage() {
         body: JSON.stringify({
           mediaId: selectedMedia.id,
           quantity: Number(restockQty),
-          costPerSheet: restockCost !== '' ? Number(restockCost) : undefined,
+          costPerSheet: isOwner && restockCost !== '' ? Number(restockCost) : (selectedMedia.costPerSheet || undefined),
           reason: restockReason.trim() || 'Restock purchase',
         }),
       });
@@ -335,7 +335,7 @@ export default function InventoryPage() {
           gsm: Number(editGsm),
           size: editSize.trim(),
           brand: editBrand.trim() || 'Generic',
-          costPerSheet: editCost !== '' ? Number(editCost) : 0,
+          costPerSheet: isOwner && editCost !== '' ? Number(editCost) : (selectedMedia.costPerSheet || 0),
           minimumStockLevel: Number(editMinStock) || 100,
         }),
       });
@@ -507,14 +507,16 @@ export default function InventoryPage() {
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Fast Set Paper Prices Button */}
-          <button
-            onClick={openPriceModal}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs transition"
-            title="View and set purchase cost per sheet for all paper media"
-          >
-            <DollarSign className="w-4 h-4 stroke-[2.5]" />
-            <span>💰 Set Paper Prices</span>
-          </button>
+          {isOwner && (
+            <button
+              onClick={openPriceModal}
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs transition"
+              title="View and set purchase cost per sheet for all paper media"
+            >
+              <DollarSign className="w-4 h-4 stroke-[2.5]" />
+              <span>💰 Set Paper Prices</span>
+            </button>
+          )}
 
           {/* Add New Media (Paper Type) */}
           <button
@@ -581,22 +583,24 @@ export default function InventoryPage() {
       )}
 
       {/* KPI Overview Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isOwner ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
         {/* Card 1: Overall Stock Valuation */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Overall Stock Valuation
-            </span>
-            <div className="text-2xl font-black text-emerald-700 mt-0.5">
-              ₹{totalStockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        {isOwner && (
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Overall Stock Valuation
+              </span>
+              <div className="text-2xl font-black text-emerald-700 mt-0.5">
+                ₹{totalStockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <span className="text-[11px] text-slate-500 font-medium">Value of physical sheets in hand</span>
             </div>
-            <span className="text-[11px] text-slate-500 font-medium">Value of physical sheets in hand</span>
+            <div className="p-3 bg-emerald-50 text-emerald-700 rounded-2xl font-bold border border-emerald-200">
+              <DollarSign className="w-5 h-5 stroke-[2.5]" />
+            </div>
           </div>
-          <div className="p-3 bg-emerald-50 text-emerald-700 rounded-2xl font-bold border border-emerald-200">
-            <DollarSign className="w-5 h-5 stroke-[2.5]" />
-          </div>
-        </div>
+        )}
 
         {/* Card 2: Total Sheets In Stock */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
@@ -681,9 +685,9 @@ export default function InventoryPage() {
                 <th className="py-3 px-4">Weight (GSM)</th>
                 <th className="py-3 px-4">Size</th>
                 <th className="py-3 px-4">Brand</th>
-                <th className="py-3 px-4">Cost / Sheet</th>
+                {isOwner && <th className="py-3 px-4">Cost / Sheet</th>}
                 <th className="py-3 px-4">Stock in Hand</th>
-                <th className="py-3 px-4">Stock Valuation</th>
+                {isOwner && <th className="py-3 px-4">Stock Valuation</th>}
                 <th className="py-3 px-4">Min Alert</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
@@ -692,7 +696,7 @@ export default function InventoryPage() {
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredMedia.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-8 text-center text-slate-400">
+                  <td colSpan={isOwner ? 10 : 8} className="py-8 text-center text-slate-400">
                     No media items found matching search.
                   </td>
                 </tr>
@@ -727,17 +731,19 @@ export default function InventoryPage() {
                       <td className="py-3.5 px-4 text-slate-500">
                         {m.brand || 'Generic'}
                       </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-900">
-                        <button
-                          type="button"
-                          onClick={() => openSinglePriceModal(m)}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono text-xs font-black transition flex items-center space-x-1.5 group shadow-2xs"
-                          title="Click to view or change this paper's purchase cost per sheet"
-                        >
-                          <span>₹{unitCost.toFixed(2)}</span>
-                          <Edit2 className="w-3 h-3 text-emerald-600 opacity-60 group-hover:opacity-100" />
-                        </button>
-                      </td>
+                      {isOwner && (
+                        <td className="py-3.5 px-4 font-bold text-slate-900">
+                          <button
+                            type="button"
+                            onClick={() => openSinglePriceModal(m)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono text-xs font-black transition flex items-center space-x-1.5 group shadow-2xs"
+                            title="Click to view or change this paper's purchase cost per sheet"
+                          >
+                            <span>₹{unitCost.toFixed(2)}</span>
+                            <Edit2 className="w-3 h-3 text-emerald-600 opacity-60 group-hover:opacity-100" />
+                          </button>
+                        </td>
+                      )}
                       <td className="py-3.5 px-4">
                         <span
                           className={`font-black text-sm ${
@@ -747,11 +753,13 @@ export default function InventoryPage() {
                           {m.currentStock.toLocaleString()} sheets
                         </span>
                       </td>
-                      <td className="py-3.5 px-4">
-                        <span className="font-black text-xs text-emerald-700 font-mono">
-                          ₹{stockVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                      </td>
+                      {isOwner && (
+                        <td className="py-3.5 px-4">
+                          <span className="font-black text-xs text-emerald-700 font-mono">
+                            ₹{stockVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </td>
+                      )}
                       <td className="py-3.5 px-4 text-slate-400 font-semibold">
                         {m.minimumStockLevel} sheets
                       </td>
@@ -771,14 +779,16 @@ export default function InventoryPage() {
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end space-x-1.5">
                           {/* 1. Quick Set Price Button */}
-                          <button
-                            onClick={() => openSinglePriceModal(m)}
-                            className="px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-lg border border-emerald-300 transition flex items-center space-x-1"
-                            title="Set or Edit Cost Per Sheet"
-                          >
-                            <DollarSign className="w-3.5 h-3.5 stroke-[2.5]" />
-                            <span>Price</span>
-                          </button>
+                          {isOwner && (
+                            <button
+                              onClick={() => openSinglePriceModal(m)}
+                              className="px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-lg border border-emerald-300 transition flex items-center space-x-1"
+                              title="Set or Edit Cost Per Sheet"
+                            >
+                              <DollarSign className="w-3.5 h-3.5 stroke-[2.5]" />
+                              <span>Price</span>
+                            </button>
+                          )}
 
                           {/* 2. Quick Adjust Button */}
                           <button
@@ -1084,10 +1094,10 @@ export default function InventoryPage() {
                     <tr>
                       <th className="py-2.5 px-3">Media Item</th>
                       <th className="py-2.5 px-3">Size / GSM</th>
-                      <th className="py-2.5 px-3">Cost/Sheet</th>
+                      {isOwner && <th className="py-2.5 px-3">Cost/Sheet</th>}
                       <th className="py-2.5 px-3">Current Stock</th>
                       <th className="py-2.5 px-3 w-36">New Physical Stock</th>
-                      <th className="py-2.5 px-3 text-right">Stock Valuation</th>
+                      {isOwner && <th className="py-2.5 px-3 text-right">Stock Valuation</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
@@ -1105,9 +1115,11 @@ export default function InventoryPage() {
                           <td className="py-2 px-3 font-semibold text-slate-700">
                             {m.gsm} GSM • {m.size}
                           </td>
-                          <td className="py-2 px-3 font-bold text-slate-800">
-                            ₹{unitCost.toFixed(2)}
-                          </td>
+                          {isOwner && (
+                            <td className="py-2 px-3 font-bold text-slate-800">
+                              ₹{unitCost.toFixed(2)}
+                            </td>
+                          )}
                           <td className="py-2 px-3 font-mono text-slate-500">
                             {m.currentStock.toLocaleString()}
                           </td>
@@ -1123,9 +1135,11 @@ export default function InventoryPage() {
                               className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
                             />
                           </td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">
-                            ₹{rowVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
+                          {isOwner && (
+                            <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">
+                              ₹{rowVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -1142,12 +1156,14 @@ export default function InventoryPage() {
                     {mediaList.reduce((acc, m) => acc + (bulkStocks[m.id] !== undefined ? bulkStocks[m.id] : m.currentStock), 0).toLocaleString()}
                   </span>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-slate-400 font-bold">Total Audit Valuation:</span>
-                  <span className="font-mono font-black text-emerald-400 text-sm">
-                    ₹{mediaList.reduce((acc, m) => acc + ((bulkStocks[m.id] !== undefined ? bulkStocks[m.id] : m.currentStock) * (Number(m.costPerSheet) || 0)), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
+                {isOwner && (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-slate-400 font-bold">Total Audit Valuation:</span>
+                    <span className="font-mono font-black text-emerald-400 text-sm">
+                      ₹{mediaList.reduce((acc, m) => acc + ((bulkStocks[m.id] !== undefined ? bulkStocks[m.id] : m.currentStock) * (Number(m.costPerSheet) || 0)), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="pt-3 flex items-center justify-end space-x-3">
@@ -1259,28 +1275,30 @@ export default function InventoryPage() {
                 )}
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Purchase Cost / Sheet (₹)
-                </label>
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0"
-                  value={restockCost}
-                  onChange={(e) => setRestockCost(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                  placeholder="e.g. 4.50"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                />
-                {restockQty !== '' && restockCost !== '' && Number(restockQty) > 0 && Number(restockCost) > 0 && (
-                  <div className="text-[11px] font-bold text-emerald-800 mt-1.5 p-2 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between">
-                    <span>Batch Purchase Invoice Value:</span>
-                    <span className="font-mono font-black text-sm text-emerald-900">
-                      ₹{(Number(restockQty) * Number(restockCost)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                )}
-              </div>
+              {isOwner && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Purchase Cost / Sheet (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    value={restockCost}
+                    onChange={(e) => setRestockCost(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    placeholder="e.g. 4.50"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  />
+                  {restockQty !== '' && restockCost !== '' && Number(restockQty) > 0 && Number(restockCost) > 0 && (
+                    <div className="text-[11px] font-bold text-emerald-800 mt-1.5 p-2 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between">
+                      <span>Batch Purchase Invoice Value:</span>
+                      <span className="font-mono font-black text-sm text-emerald-900">
+                        ₹{(Number(restockQty) * Number(restockCost)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1">
@@ -1449,22 +1467,24 @@ export default function InventoryPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-2.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1">
-                    Cost/Sheet (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    required
-                    value={newMediaCost}
-                    onChange={(e) => setNewMediaCost(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    placeholder="4.50"
-                    className="w-full px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                  />
-                </div>
+              <div className={`grid ${isOwner ? 'grid-cols-3' : 'grid-cols-2'} gap-2.5`}>
+                {isOwner && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      Cost/Sheet (₹) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      required
+                      value={newMediaCost}
+                      onChange={(e) => setNewMediaCost(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      placeholder="4.50"
+                      className="w-full px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">
@@ -1495,7 +1515,7 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              {Number(newMediaStock) > 0 && Number(newMediaCost) > 0 && (
+              {isOwner && Number(newMediaStock) > 0 && Number(newMediaCost) > 0 && (
                 <div className="text-[11px] font-bold text-emerald-800 p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between">
                   <span>Initial Stock Valuation:</span>
                   <span className="font-mono font-black text-xs text-emerald-900">
@@ -1651,21 +1671,23 @@ export default function InventoryPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1">
-                    Cost Per Sheet (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    required
-                    value={editCost}
-                    onChange={(e) => setEditCost(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                  />
-                </div>
+              <div className={`grid ${isOwner ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
+                {isOwner && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      Cost Per Sheet (₹) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      required
+                      value={editCost}
+                      onChange={(e) => setEditCost(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">
@@ -1681,7 +1703,7 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              {selectedMedia && (
+              {isOwner && selectedMedia && (
                 <div className="text-[11px] font-bold text-emerald-800 p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 flex items-center justify-between">
                   <span>Current Stock Valuation:</span>
                   <span className="font-mono font-black text-xs text-emerald-900">
@@ -1713,7 +1735,7 @@ export default function InventoryPage() {
       )}
 
       {/* MODAL 5: SINGLE PAPER QUICK PRICE MODAL */}
-      {singlePriceModalOpen && selectedMedia && (
+      {isOwner && singlePriceModalOpen && selectedMedia && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="bg-slate-950 px-6 py-4 flex items-center justify-between border-b border-slate-800">
@@ -1798,7 +1820,7 @@ export default function InventoryPage() {
       )}
 
       {/* MODAL 6: FAST BULK PAPER PRICE MATRIX MODAL */}
-      {priceModalOpen && (
+      {isOwner && priceModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
           <div className="bg-white w-full max-w-3xl max-h-[90vh] rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
             <div className="bg-slate-950 px-6 py-4 flex items-center justify-between border-b border-slate-800 flex-shrink-0">

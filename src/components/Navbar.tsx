@@ -27,7 +27,7 @@ export default function Navbar() {
 
   if (pathname === '/login' || !user) return null;
 
-  // Staff (OPERATOR) strictly sees only Job Entry and Inventory
+  // Staff (OPERATOR) sees Job Entry, Inventory, and Daily Machine Counter (Shift Closing)
   // Owner sees all 8 management modules
   const navLinks = isOwner
     ? [
@@ -43,6 +43,7 @@ export default function Navbar() {
     : [
         { href: '/production', label: 'Job Entry (Production)', icon: Printer },
         { href: '/inventory', label: 'Inventory (Stock)', icon: Boxes },
+        { href: '/daily-closing', label: 'Machine Counter (Daily Closing)', icon: Gauge },
       ];
 
   return (

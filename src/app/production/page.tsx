@@ -831,7 +831,7 @@ export default function ProductionEntryPage() {
                           : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
-                      ⚫ B&amp;W (₹1.10)
+                      {isOwner ? '⚫ B&W (₹1.10)' : '⚫ B&W (Monochrome)'}
                     </button>
                   </div>
                 </div>
@@ -875,7 +875,7 @@ export default function ProductionEntryPage() {
                     Print Format / Click Size Tier
                   </label>
                   <span className="text-[11px] font-black text-slate-900 bg-yellow-100 border border-yellow-300 px-2 py-0.5 rounded-md">
-                    Applied: ₹{unitRateVal.toFixed(2)} + {gstPercentVal}% GST
+                    {isOwner ? `Applied: ₹${unitRateVal.toFixed(2)} + ${gstPercentVal}% GST` : `Format: ${paperSize} • ${printType}`}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -890,7 +890,7 @@ export default function ProductionEntryPage() {
                   >
                     <span className="font-extrabold text-xs block">A4 Size</span>
                     <span className="text-[10px] font-bold mt-1 opacity-85">
-                      {printType === 'COLOUR' ? '₹2.90 + 18% GST' : '₹1.10 + 18% GST'}
+                      {isOwner ? (printType === 'COLOUR' ? '₹2.90 + 18% GST' : '₹1.10 + 18% GST') : 'Standard Single Size'}
                     </span>
                   </button>
 
@@ -905,9 +905,11 @@ export default function ProductionEntryPage() {
                   >
                     <span className="font-extrabold text-xs block">A3 / 12x18 / 13x19</span>
                     <span className="text-[10px] font-bold mt-1 opacity-85">
-                      {printType === 'COLOUR'
-                        ? (selectedTier === 'TIER2' ? '₹4.15 (10,001+)' : '₹4.25 (1-10k)')
-                        : '₹1.10 + 18% GST'}
+                      {isOwner
+                        ? (printType === 'COLOUR'
+                            ? (selectedTier === 'TIER2' ? '₹4.15 (10,001+)' : '₹4.25 (1-10k)')
+                            : '₹1.10 + 18% GST')
+                        : 'Standard Press Sheet'}
                     </span>
                   </button>
 
@@ -922,14 +924,14 @@ export default function ProductionEntryPage() {
                   >
                     <span className="font-extrabold text-xs block">BANNER (13x26+)</span>
                     <span className="text-[10px] font-bold mt-1 opacity-85">
-                      {printType === 'COLOUR' ? '₹6.40 + 18% GST' : '₹2.20 + 18% GST'}
+                      {isOwner ? (printType === 'COLOUR' ? '₹6.40 + 18% GST' : '₹2.20 + 18% GST') : 'Long Banner Sheet'}
                     </span>
                   </button>
                 </div>
               </div>
 
-              {/* A3 Colour Machine Billing Slab Selector */}
-              {paperSize === 'A3' && printType === 'COLOUR' && (
+              {/* A3 Colour Machine Billing Slab Selector - OWNER ONLY */}
+              {isOwner && paperSize === 'A3' && printType === 'COLOUR' && (
                 <div className="bg-amber-50/80 border border-amber-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
                   <div>
                     <div className="text-xs font-black text-amber-950 flex items-center space-x-1.5">
@@ -984,27 +986,36 @@ export default function ProductionEntryPage() {
                   const unitCost = Number(m.costPerSheet || 0);
                   return (
                     <option key={m.id} value={m.id}>
-                      {m.gsm} GSM {m.name} ({m.size}) — ₹{unitCost.toFixed(2)}/sheet [Stock: {m.currentStock}]
+                      {m.gsm} GSM {m.name} ({m.size}) {isOwner ? `— ₹${unitCost.toFixed(2)}/sheet ` : ''}[Stock: {m.currentStock}]
                     </option>
                   );
                 })}
               </select>
 
               {selectedMedia && (
-                <div className="mt-2.5 p-2.5 bg-slate-100/90 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs border border-slate-200">
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-slate-500 font-semibold">Paper Purchase Cost:</span>
-                    <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                      ₹{Number(selectedMedia.costPerSheet || 0).toFixed(2)} / sheet
+                isOwner ? (
+                  <div className="mt-2.5 p-2.5 bg-slate-100/90 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs border border-slate-200">
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-slate-500 font-semibold">Paper Purchase Cost:</span>
+                      <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        ₹{Number(selectedMedia.costPerSheet || 0).toFixed(2)} / sheet
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-slate-500 font-medium">Job Paper Value ({liveCalc.sheetConsumption} sh):</span>
+                      <span className="font-mono font-black text-slate-900">
+                        ₹{(liveCalc.sheetConsumption * Number(selectedMedia.costPerSheet || 0)).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2.5 p-2.5 bg-slate-100/90 rounded-xl flex items-center justify-between text-xs border border-slate-200">
+                    <span className="text-slate-600 font-semibold">Available Paper Inventory Stock:</span>
+                    <span className="font-mono font-black text-slate-900 text-sm">
+                      {selectedMedia.currentStock.toLocaleString()} sheets in stock
                     </span>
                   </div>
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-slate-500 font-medium">Job Paper Value ({liveCalc.sheetConsumption} sh):</span>
-                    <span className="font-mono font-black text-slate-900">
-                      ₹{(liveCalc.sheetConsumption * Number(selectedMedia.costPerSheet || 0)).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
+                )
               )}
             </div>
           </div>
@@ -1189,34 +1200,55 @@ export default function ProductionEntryPage() {
               </div>
 
               {/* Cost Calculation */}
-              <div className="pt-2 border-t border-white/10 space-y-1.5 text-xs">
-                <div className="flex items-center justify-between text-slate-400">
-                  <span>Active Tariff:</span>
-                  <span className="font-bold text-yellow-400 text-right max-w-[180px] truncate">{rateInfo.tierLabel}</span>
+              {isOwner ? (
+                <div className="pt-2 border-t border-white/10 space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Active Tariff:</span>
+                    <span className="font-bold text-yellow-400 text-right max-w-[180px] truncate">{rateInfo.tierLabel}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Billing Rate:</span>
+                    <span className="font-semibold text-white">₹{liveCalc.unitCost.toFixed(2)} / click</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Base Cost ({liveCalc.machineClicks} clicks):</span>
+                    <span className="font-semibold text-white">₹{liveCalc.totalCost.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>GST ({liveCalc.unitCost > 0 ? '18%' : '0%'}):</span>
+                    <span className="font-semibold text-white">₹{liveCalc.gstAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Paper Material Cost ({liveCalc.sheetConsumption} sh):</span>
+                    <span className="font-semibold text-emerald-400 font-mono">
+                      ₹{(liveCalc.sheetConsumption * Number(selectedMedia?.costPerSheet || 0)).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-yellow-400 font-extrabold text-sm pt-2 border-t border-white/10">
+                    <span>Grand Total Cost:</span>
+                    <span>₹{liveCalc.grandTotalCost.toFixed(2)}</span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-slate-400">
-                  <span>Billing Rate:</span>
-                  <span className="font-semibold text-white">₹{liveCalc.unitCost.toFixed(2)} / click</span>
+              ) : (
+                <div className="pt-2 border-t border-white/10 space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Job Specs:</span>
+                    <span className="font-bold text-white">{printType} • {paperSize}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Print Sides:</span>
+                    <span className="font-semibold text-white">{printSide === 'DOUBLE' ? '2 Sides (Duplex)' : '1 Side (Simplex)'}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Total Machine Clicks:</span>
+                    <span className="font-bold text-yellow-400">{liveCalc.machineClicks} clicks</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Inventory Deducted:</span>
+                    <span className="font-bold text-emerald-400">{liveCalc.sheetConsumption} sheets</span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-slate-400">
-                  <span>Base Cost ({liveCalc.machineClicks} clicks):</span>
-                  <span className="font-semibold text-white">₹{liveCalc.totalCost.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between text-slate-400">
-                  <span>GST ({liveCalc.unitCost > 0 ? '18%' : '0%'}):</span>
-                  <span className="font-semibold text-white">₹{liveCalc.gstAmount.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between text-slate-400">
-                  <span>Paper Material Cost ({liveCalc.sheetConsumption} sh):</span>
-                  <span className="font-semibold text-emerald-400 font-mono">
-                    ₹{(liveCalc.sheetConsumption * Number(selectedMedia?.costPerSheet || 0)).toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-yellow-400 font-extrabold text-sm pt-2 border-t border-white/10">
-                  <span>Grand Total Cost:</span>
-                  <span>₹{liveCalc.grandTotalCost.toFixed(2)}</span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Submit Button */}
@@ -1641,7 +1673,7 @@ export default function ProductionEntryPage() {
                   >
                     {mediaList.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.gsm} GSM {m.name} ({m.size}) — ₹{Number(m.costPerSheet || 0).toFixed(2)}/sheet [Stock: {m.currentStock}]
+                        {m.gsm} GSM {m.name} ({m.size}) {isOwner ? `— ₹${Number(m.costPerSheet || 0).toFixed(2)}/sheet ` : ''}[Stock: {m.currentStock}]
                       </option>
                     ))}
                   </select>
@@ -1728,9 +1760,11 @@ export default function ProductionEntryPage() {
                     <History className="w-4 h-4 text-yellow-400" />
                     <span className="font-bold text-slate-300 text-xs">Live Calculation Impact:</span>
                   </div>
-                  <span className="font-mono text-xs text-yellow-400 font-bold">
-                    Billing Rate: ₹{editRateInfo.rate.toFixed(2)}/click
-                  </span>
+                  {isOwner && (
+                    <span className="font-mono text-xs text-yellow-400 font-bold">
+                      Billing Rate: ₹{editRateInfo.rate.toFixed(2)}/click
+                    </span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">

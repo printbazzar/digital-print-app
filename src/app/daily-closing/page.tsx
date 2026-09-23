@@ -118,10 +118,6 @@ export default function DailyClosingPage() {
     if (!authLoading && !user) {
       router.push('/login');
     } else if (user) {
-      if (user.role === 'OPERATOR') {
-        router.replace('/production');
-        return;
-      }
       fetchCounterInfo();
     }
   }, [user, authLoading]);
@@ -353,7 +349,7 @@ export default function DailyClosingPage() {
     }
   };
 
-  if (authLoading || !user || !isOwner) return null;
+  if (authLoading || !user) return null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
@@ -800,18 +796,33 @@ export default function DailyClosingPage() {
 
         {/* 3 Metric Badges */}
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 bg-slate-50/50 border-b border-slate-200">
-          <div className="p-4 flex items-center justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Overall Stock Valuation</span>
-              <div className="text-xl font-black text-emerald-700 font-mono mt-0.5">
-                ₹{totalStockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {isOwner ? (
+            <div className="p-4 flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Overall Stock Valuation</span>
+                <div className="text-xl font-black text-emerald-700 font-mono mt-0.5">
+                  ₹{totalStockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <span className="text-[10px] text-slate-400 font-medium">Total material cost in hand</span>
               </div>
-              <span className="text-[10px] text-slate-400 font-medium">Total material cost in hand</span>
+              <div className="p-2.5 bg-emerald-100/60 text-emerald-800 rounded-xl font-bold">
+                <DollarSign className="w-5 h-5" />
+              </div>
             </div>
-            <div className="p-2.5 bg-emerald-100/60 text-emerald-800 rounded-xl font-bold">
-              <DollarSign className="w-5 h-5" />
+          ) : (
+            <div className="p-4 flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Today Shift Job Clicks</span>
+                <div className="text-xl font-black text-yellow-800 font-mono mt-0.5">
+                  {jobClicks.toLocaleString()} Clicks
+                </div>
+                <span className="text-[10px] text-slate-400 font-medium">Recorded from production entries</span>
+              </div>
+              <div className="p-2.5 bg-yellow-100 text-yellow-800 rounded-xl font-bold">
+                <Gauge className="w-5 h-5" />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="p-4 flex items-center justify-between">
             <div>
@@ -886,16 +897,16 @@ export default function DailyClosingPage() {
                 <th className="py-2.5 px-4">Paper / Media</th>
                 <th className="py-2.5 px-4">GSM</th>
                 <th className="py-2.5 px-4">Size</th>
-                <th className="py-2.5 px-4">Cost / Sheet</th>
+                {isOwner && <th className="py-2.5 px-4">Cost / Sheet</th>}
                 <th className="py-2.5 px-4">Stock in Hand</th>
-                <th className="py-2.5 px-4">Stock Valuation</th>
+                {isOwner && <th className="py-2.5 px-4">Stock Valuation</th>}
                 <th className="py-2.5 px-4">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredStockMedia.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-6 text-center text-slate-400">
+                  <td colSpan={isOwner ? 7 : 5} className="py-6 text-center text-slate-400">
                     No matching paper stock items.
                   </td>
                 </tr>
@@ -913,15 +924,19 @@ export default function DailyClosingPage() {
                       </td>
                       <td className="py-2.5 px-4 font-semibold text-slate-700">{m.gsm} GSM</td>
                       <td className="py-2.5 px-4 font-semibold text-slate-700">{m.size}</td>
-                      <td className="py-2.5 px-4 font-bold text-slate-900 font-mono">₹{unitCost.toFixed(2)}</td>
+                      {isOwner && (
+                        <td className="py-2.5 px-4 font-bold text-slate-900 font-mono">₹{unitCost.toFixed(2)}</td>
+                      )}
                       <td className="py-2.5 px-4 font-mono font-bold text-slate-900">
                         <span className={isLow ? 'text-red-600 font-black' : 'text-slate-900'}>
                           {m.currentStock.toLocaleString()} sheets
                         </span>
                       </td>
-                      <td className="py-2.5 px-4 font-mono font-black text-emerald-700">
-                        ₹{rowValuation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
+                      {isOwner && (
+                        <td className="py-2.5 px-4 font-mono font-black text-emerald-700">
+                          ₹{rowValuation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      )}
                       <td className="py-2.5 px-4">
                         {isLow ? (
                           <span className="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 rounded-full inline-flex items-center space-x-1">

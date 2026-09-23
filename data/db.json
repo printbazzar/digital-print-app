@@ -19,6 +19,16 @@
       "isActive": true,
       "createdAt": "2026-08-31T13:04:44.942Z",
       "updatedAt": "2026-08-31T13:04:44.942Z"
+    },
+    {
+      "id": "usr-custom-1790165203860",
+      "email": "javith@printbazzar.com",
+      "name": "javith",
+      "passwordHash": "$2a$10$27mCP81bRtgrpQ4ehKVq.egQEm8O4z1bsBCaqe/wRQFqjm69UWngO",
+      "role": "OPERATOR",
+      "isActive": true,
+      "createdAt": "2026-09-23T12:06:43.860Z",
+      "updatedAt": "2026-09-23T12:06:43.860Z"
     }
   ],
   "machines": [

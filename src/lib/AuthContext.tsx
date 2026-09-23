@@ -85,8 +85,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           router.replace('/');
         }
       } else if (user.role === 'OPERATOR') {
-        // Staff / Operator is strictly restricted to Job Entry and Inventory
-        const allowedOperatorPaths = ['/production', '/inventory'];
+        // Staff / Operator is permitted to access Job Entry, Inventory, and Machine Counter
+        const allowedOperatorPaths = ['/production', '/inventory', '/daily-closing'];
         const isAllowed = allowedOperatorPaths.some(
           (p) => pathname === p || pathname.startsWith(p + '/')
         );
