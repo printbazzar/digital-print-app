@@ -52,18 +52,32 @@ ping 127.0.0.1 -n 4 >nul
 echo [SUCCESS] Opening Print Bazzar in your default browser...
 start http://localhost:3000
 
+:: Detect LAN IP for Shop computers
+set LAN_IP=
+for /f "usebackq tokens=*" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias 'Wi-Fi' -ErrorAction SilentlyContinue).IPAddress"`) do set LAN_IP=%%i
+if "%LAN_IP%"=="" (
+    for /f "usebackq tokens=*" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias 'Ethernet' -ErrorAction SilentlyContinue).IPAddress"`) do set LAN_IP=%%i
+)
+
 :RUNNING
 cls
 echo ======================================================================
 echo          PRINT BAZZAR - Production Server is ONLINE [ACTIVE]
 echo ======================================================================
 echo.
-echo  * Local Address:       http://localhost:3000
+echo  * Local Address (This Laptop): http://localhost:3000
+if not "%LAN_IP%"=="" (
+echo  * Shop PC / Staff Link (LAN):  http://%LAN_IP%:3000
+)
 echo.
-echo  * Local Database:      %CD%\data\db.json
-echo  * Automated Backups:   %CD%\data\backups\
+echo  * Local Database:              %CD%\data\db.json
+echo  * Automated Backups:           %CD%\data\backups\
 echo.
 echo ======================================================================
+echo   STAFF / OPERATOR LOGIN:  staff  /  staff@2026
+echo   OWNER FULL ACCESS LOGIN: owner  /  owner@2026
+echo ======================================================================
+echo.
 echo   KEEP THIS WINDOW OPEN WHILE WORKING IN THE SHOP.
 echo   To stop the server, simply close this window.
 echo ======================================================================
